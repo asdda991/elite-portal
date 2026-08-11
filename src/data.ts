@@ -165,7 +165,14 @@ export interface Match {
   status: "live" | "upcoming" | "ended";
   statusText?: { ar: string; en: string };
   time: { ar: string; en: string };
+  utcTime?: string;
   venue: { ar: string; en: string };
+  logoA?: string;
+  logoB?: string;
+  streams?: any[];
+  scorers?: any;
+  stats?: any[];
+  lineups?: any;
 }
 
 export const sportsMatches: Match[] = [
@@ -179,6 +186,7 @@ export const sportsMatches: Match[] = [
     status: "live",
     statusText: { ar: "الشوط الثاني '74", en: "2nd Half '74" },
     time: { ar: "اليوم، 21:00", en: "Today, 21:00" },
+    utcTime: new Date(Date.now() - 3600000 * 0.5).toISOString(),
     venue: { ar: "ملعب سانتياغو برنابيو", en: "Santiago Bernabéu" }
   },
   {
@@ -188,6 +196,7 @@ export const sportsMatches: Match[] = [
     teamB: { ar: "غولدن ستيت واريورز", en: "Golden State Warriors" },
     status: "upcoming",
     time: { ar: "غداً، 04:30", en: "Tomorrow, 04:30" },
+    utcTime: new Date(Date.now() + 3600000 * 20).toISOString(),
     venue: { ar: "صالة كريبتو كوم", en: "Crypto.com Arena" }
   },
   {
@@ -199,6 +208,7 @@ export const sportsMatches: Match[] = [
     scoreB: 2,
     status: "ended",
     time: { ar: "أمس", en: "Yesterday" },
+    utcTime: new Date(Date.now() - 3600000 * 28).toISOString(),
     venue: { ar: "الملعب الرئيسي، ويمبلدون", en: "Wimbledon Centre Court" }
   },
   {
@@ -208,6 +218,7 @@ export const sportsMatches: Match[] = [
     teamB: { ar: "التصفيات التأهيلية", en: "Qualifying Session" },
     status: "upcoming",
     time: { ar: "الأحد، 15:00", en: "Sunday, 15:00" },
+    utcTime: new Date(Date.now() + 3600000 * 50).toISOString(),
     venue: { ar: "حلبة مونت كارلو", en: "Circuit de Monaco" }
   },
   {
@@ -217,6 +228,7 @@ export const sportsMatches: Match[] = [
     teamB: { ar: "مانشستر سيتي", en: "Manchester City" },
     status: "upcoming",
     time: { ar: "السبت، 18:30", en: "Saturday, 18:30" },
+    utcTime: new Date(Date.now() + 3600000 * 42).toISOString(),
     venue: { ar: "ملعب أنفيلد", en: "Anfield Stadium" }
   }
 ];

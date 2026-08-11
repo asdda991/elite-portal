@@ -153,24 +153,79 @@ const getEmbedUrl = (url: string) => {
 };
 
 export default function App() {
-  // State for language (default: Arabic "ar")
-  const [lang, setLang] = useState<Language>(() => {
+  // Auto-detect browser default language (Arabic if 'ar*', English if 'en*', default fallback 'ar')
+  const getInitialLanguage = (): Language => {
     try {
       const saved = localStorage.getItem("el_portal_lang");
-      return (saved === "ar" || saved === "en") ? (saved as Language) : "ar";
+      if (saved === "ar" || saved === "en") {
+        return saved as Language;
+      }
+      const navLang = (navigator.language || (navigator.languages && navigator.languages[0]) || "").toLowerCase();
+      if (navLang.startsWith("ar")) {
+        return "ar";
+      }
+      if (navLang.startsWith("en")) {
+        return "en";
+      }
     } catch (e) {
-      return "ar";
+      // ignore
     }
-  });
-  // State for theme (default: Black "black")
-  const [theme, setTheme] = useState<Theme>(() => {
+    return "ar";
+  };
+
+  // Auto-detect browser/system color scheme (white if light mode preferred, black if dark mode)
+  const getInitialTheme = (): Theme => {
     try {
       const saved = localStorage.getItem("el_portal_theme");
-      return (saved === "black" || saved === "white") ? (saved as Theme) : "black";
+      if (saved === "black" || saved === "white") {
+        return saved as Theme;
+      }
+      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+        return "white";
+      }
+      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        return "black";
+      }
     } catch (e) {
-      return "black";
+      // ignore
     }
-  });
+    return "black";
+  };
+
+  // State for language
+  const [lang, setLang] = useState<Language>(getInitialLanguage);
+  
+  // State for theme
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+
+  // Sync document element attributes with active language
+  useEffect(() => {
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    document.documentElement.lang = lang;
+  }, [lang]);
+
+  // Listen to browser/system color scheme changes if user hasn't explicitly set a preference in localStorage
+  useEffect(() => {
+    try {
+      const savedTheme = localStorage.getItem("el_portal_theme");
+      if (savedTheme) return; // Respect explicit user override
+
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+      const handleChange = (e: MediaQueryListEvent) => {
+        setTheme(e.matches ? "white" : "black");
+      };
+
+      if (mediaQuery.addEventListener) {
+        mediaQuery.addEventListener("change", handleChange);
+        return () => mediaQuery.removeEventListener("change", handleChange);
+      } else if ((mediaQuery as any).addListener) {
+        (mediaQuery as any).addListener(handleChange);
+        return () => (mediaQuery as any).removeListener(handleChange);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
 
   const changeLanguage = (newLang: Language) => {
     setLang(newLang);
@@ -196,6 +251,7 @@ export default function App() {
   // Filters and search states
   const [sportsSearch, setSportsSearch] = useState("");
   const [selectedSportFilter, setSelectedSportFilter] = useState<string>("all");
+  const [selectedTimePeriodFilter, setSelectedTimePeriodFilter] = useState<"all" | "today" | "tomorrow" | "yesterday" | "live">("all");
   
   const [cinemaSearch, setCinemaSearch] = useState("");
   const [selectedGenreFilter, setSelectedGenreFilter] = useState<string>("all");
@@ -387,11 +443,67 @@ export default function App() {
 
   const parseSafariDate = (dateStr: any): Date | null => {
     if (!dateStr || typeof dateStr !== "string") return null;
-    const isoStr = dateStr.includes(" ") && !dateStr.includes("T") 
-      ? dateStr.replace(" ", "T") 
-      : dateStr;
+    let isoStr = dateStr.trim();
+    if (isoStr.includes(" ") && !isoStr.includes("T")) {
+      isoStr = isoStr.replace(" ", "T");
+    }
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(isoStr) && !isoStr.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(isoStr)) {
+      isoStr += "Z";
+    }
     const d = new Date(isoStr);
     return isNaN(d.getTime()) ? null : d;
+  };
+
+  const getMatchLocalDate = (match: any): Date | null => {
+    if (!match) return null;
+    if (match.utcTime) {
+      const parsed = parseSafariDate(match.utcTime);
+      if (parsed) return parsed;
+    }
+    const timeStr = match.time?.en || match.time?.ar || (typeof match.time === "string" ? match.time : "");
+    if (typeof timeStr === "string" && timeStr.trim() !== "") {
+      const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+      const cleanStr = timeStr.replace(/[٠-٩]/g, (d) => String(arabicDigits.indexOf(d)));
+
+      if (/^\d{4}-\d{2}-\d{2}/.test(cleanStr)) {
+        return parseSafariDate(cleanStr);
+      }
+
+      const matchTimeResult = cleanStr.match(/(\d{1,2}):(\d{2})/);
+      if (matchTimeResult) {
+        const hours = parseInt(matchTimeResult[1], 10);
+        const minutes = parseInt(matchTimeResult[2], 10);
+        const now = new Date();
+        const d = new Date(now);
+        d.setHours(hours, minutes, 0, 0);
+
+        const cleanStrLower = cleanStr.toLowerCase();
+        if (cleanStrLower.includes("tomorrow") || cleanStrLower.includes("غد")) {
+          d.setDate(d.getDate() + 1);
+        } else if (cleanStrLower.includes("yesterday") || cleanStrLower.includes("أمس")) {
+          d.setDate(d.getDate() - 1);
+        }
+        return d;
+      }
+    }
+    return null;
+  };
+
+  const getUserTimezoneDisplay = () => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const now = new Date();
+      const offsetMin = -now.getTimezoneOffset();
+      const offsetHours = Math.floor(Math.abs(offsetMin) / 60);
+      const offsetMinsRem = Math.abs(offsetMin) % 60;
+      const sign = offsetMin >= 0 ? "+" : "-";
+      const formattedOffset = `GMT${sign}${offsetHours}${offsetMinsRem > 0 ? `:${offsetMinsRem}` : ""}`;
+      
+      const city = tz.includes("/") ? tz.split("/").pop()?.replace(/_/g, " ") : tz;
+      return `${city} (${formattedOffset})`;
+    } catch (e) {
+      return "GMT+3";
+    }
   };
 
   const getStreamAvailability = (match: any, now: Date) => {
@@ -402,33 +514,7 @@ export default function App() {
       return { isAvailable: true, minutesRemaining: 0, diffMs: 0, scheduledDate: null };
     }
 
-    let scheduledDate: Date | null = parseSafariDate(match.utcTime);
-
-    if (!scheduledDate) {
-      const timeStr = match.time?.en || match.time?.ar || (typeof match.time === "string" ? match.time : "");
-      if (typeof timeStr === "string" && timeStr.trim() !== "") {
-        const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-        const cleanStr = timeStr.replace(/[٠-٩]/g, (d) => String(arabicDigits.indexOf(d)));
-        
-        const matchTimeResult = cleanStr.match(/(\d{1,2}):(\d{2})/);
-        if (matchTimeResult) {
-          const hours = parseInt(matchTimeResult[1], 10);
-          const minutes = parseInt(matchTimeResult[2], 10);
-          
-          const d = new Date(now);
-          d.setHours(hours, minutes, 0, 0);
-
-          const cleanStrLower = cleanStr.toLowerCase();
-          if (cleanStrLower.includes("tomorrow") || cleanStrLower.includes("غد")) {
-            d.setDate(d.getDate() + 1);
-          } else if (cleanStrLower.includes("yesterday") || cleanStrLower.includes("أمس")) {
-            d.setDate(d.getDate() - 1);
-          }
-          
-          scheduledDate = d;
-        }
-      }
-    }
+    const scheduledDate: Date | null = getMatchLocalDate(match);
 
     if (!scheduledDate) {
       return { isAvailable: true, minutesRemaining: 0, diffMs: 0, scheduledDate: null };
@@ -454,49 +540,16 @@ export default function App() {
       return match;
     }
 
-    let scheduledDate: Date | null = parseSafariDate(match.utcTime);
-
-    // Parse custom match time
-    if (!scheduledDate) {
-      const timeStr = match.time?.en || match.time?.ar || match.time || "";
-      if (typeof timeStr === "string") {
-        const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-        const cleanStr = timeStr.replace(/[٠-٩]/g, (d) => arabicDigits.indexOf(d).toString());
-        
-        const matchTimeResult = cleanStr.match(/(\d{1,2}):(\d{2})/);
-        if (matchTimeResult) {
-          const hours = parseInt(matchTimeResult[1], 10);
-          const minutes = parseInt(matchTimeResult[2], 10);
-          
-          const d = new Date(now);
-          d.setHours(hours, minutes, 0, 0);
-
-          const cleanStrLower = cleanStr.toLowerCase();
-          if (cleanStrLower.includes("tomorrow") || cleanStrLower.includes("غد")) {
-            d.setDate(d.getDate() + 1);
-          } else if (cleanStrLower.includes("yesterday") || cleanStrLower.includes("أمس")) {
-            d.setDate(d.getDate() - 1);
-          }
-          
-          scheduledDate = d;
-        }
-      }
-    }
+    const scheduledDate: Date | null = getMatchLocalDate(match);
 
     if (scheduledDate) {
       if (now >= scheduledDate) {
-        const elapsedMs = now.getTime() - scheduledDate.getTime();
-        const elapsedMinutes = Math.floor(elapsedMs / 60000);
-
-        let periodTextEn = "Live";
-        let periodTextAr = "مباشر";
-
         return {
           ...match,
           status: "live",
           statusText: {
-            ar: periodTextAr,
-            en: periodTextEn
+            ar: "مباشر",
+            en: "Live"
           },
           scoreA: match.scoreA !== undefined ? match.scoreA : 0,
           scoreB: match.scoreB !== undefined ? match.scoreB : 0
@@ -961,24 +1014,46 @@ export default function App() {
   };
 
   const formatMatchTime = (match: any, currentLang: "ar" | "en") => {
-    if (match.utcTime) {
-      try {
-        const d = parseSafariDate(match.utcTime);
-        if (d && !isNaN(d.getTime())) {
-          return d.toLocaleString(currentLang === "ar" ? "ar-EG" : "en-US", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true
-          });
-        }
-      } catch (e) {
-        // Fallback
+    if (!match) return "";
+    const d = getMatchLocalDate(match);
+    if (d && !isNaN(d.getTime())) {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const matchStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      
+      const diffDays = Math.round((matchStart.getTime() - todayStart.getTime()) / (1000 * 3600 * 24));
+
+      const timeFormatted = d.toLocaleTimeString(currentLang === "ar" ? "ar-EG" : "en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      });
+
+      let dayPrefix = "";
+      if (diffDays === 0) {
+        dayPrefix = currentLang === "ar" ? "اليوم" : "Today";
+      } else if (diffDays === 1) {
+        dayPrefix = currentLang === "ar" ? "غداً" : "Tomorrow";
+      } else if (diffDays === -1) {
+        dayPrefix = currentLang === "ar" ? "أمس" : "Yesterday";
+      } else {
+        dayPrefix = d.toLocaleDateString(currentLang === "ar" ? "ar-EG" : "en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric"
+        });
       }
+
+      return `${dayPrefix}، ${timeFormatted}`;
     }
-    return match.time[currentLang] || match.time.en || "";
+
+    if (match.time) {
+      if (typeof match.time === "object") {
+        return match.time[currentLang] || match.time.en || "";
+      }
+      return String(match.time);
+    }
+    return "";
   };
 
   const shouldShowPlayButton = (match: any): boolean => {
@@ -1023,6 +1098,15 @@ export default function App() {
     { id: "formula1", label: t.formula1 },
   ], [t]);
 
+  // Map time period filters
+  const timePeriodFilters = useMemo(() => [
+    { id: "all", label: lang === "ar" ? "جميع الفترات" : "All Periods" },
+    { id: "today", label: lang === "ar" ? "اليوم" : "Today" },
+    { id: "tomorrow", label: lang === "ar" ? "غداً" : "Tomorrow" },
+    { id: "yesterday", label: lang === "ar" ? "أمس" : "Yesterday" },
+    { id: "live", label: lang === "ar" ? "مباشر الآن" : "Live Now" },
+  ], [lang]);
+
   // Map movie genres
   const movieGenres = useMemo(() => [
     { id: "all", label: t.all },
@@ -1036,6 +1120,29 @@ export default function App() {
     const listToFilter = matches.map(m => autoProcessMatchStatus(m, currentTime));
     return listToFilter.filter(match => {
       const matchSport = match.sport === selectedSportFilter || selectedSportFilter === "all";
+
+      // Time Period Filter based on visitor's browser local date
+      let matchesTimePeriod = true;
+      if (selectedTimePeriodFilter === "live") {
+        matchesTimePeriod = match.status === "live";
+      } else if (selectedTimePeriodFilter !== "all") {
+        const d = getMatchLocalDate(match);
+        if (d) {
+          const now = new Date();
+          const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          const matchStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          const diffDays = Math.round((matchStart.getTime() - todayStart.getTime()) / (1000 * 3600 * 24));
+
+          if (selectedTimePeriodFilter === "today") {
+            matchesTimePeriod = diffDays === 0;
+          } else if (selectedTimePeriodFilter === "tomorrow") {
+            matchesTimePeriod = diffDays === 1;
+          } else if (selectedTimePeriodFilter === "yesterday") {
+            matchesTimePeriod = diffDays === -1;
+          }
+        }
+      }
+
       const teamAName = match.teamA[lang] || match.teamA.en || "";
       const teamBName = match.teamB[lang] || match.teamB.en || "";
       const venueName = match.venue[lang] || match.venue.en || "";
@@ -1043,9 +1150,10 @@ export default function App() {
         teamAName.toLowerCase().includes(sportsSearch.toLowerCase()) ||
         teamBName.toLowerCase().includes(sportsSearch.toLowerCase()) ||
         venueName.toLowerCase().includes(sportsSearch.toLowerCase());
-      return matchSport && matchesSearch;
+
+      return matchSport && matchesTimePeriod && matchesSearch;
     });
-  }, [matches, selectedSportFilter, sportsSearch, lang, currentTime]);
+  }, [matches, selectedSportFilter, selectedTimePeriodFilter, sportsSearch, lang, currentTime]);
 
   // Filtered Movies
   const filteredMovies = useMemo(() => {
@@ -1383,6 +1491,8 @@ export default function App() {
                 className="space-y-6"
               >
                 
+
+
                 {/* Matches Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   
