@@ -1,0 +1,126 @@
+{
+  "custom_1784593593113": {
+    "id": "custom_1784593593113",
+    "sport": "football",
+    "teamA": {
+      "ar": "ريال مدريد",
+      "en": "Real Madrid"
+    },
+    "teamB": {
+      "ar": "برشلونة",
+      "en": "Barcelona"
+    },
+    "scoreA": 0,
+    "scoreB": 0,
+    "status": "live",
+    "statusText": {
+      "ar": "مباشر",
+      "en": "Live"
+    },
+    "time": {
+      "ar": "20:00",
+      "en": "20:00"
+    },
+    "venue": {
+      "ar": "سانتياغو برنابيو",
+      "en": "Santiago Bernabéu"
+    },
+    "leagueName": {
+      "en": "La Liga",
+      "ar": "الدوري الإسباني"
+    },
+    "scorers": {
+      "home": [],
+      "away": []
+    },
+    "stats": [],
+    "lineups": null,
+    "streamUrl": "http://cen2bj.mavpro.xyz:80/live/naJ7ZFF0ag/wWAstnrsgi/78395.m3u",
+    "streamType": "iframe",
+    "streams": [
+      {
+        "name": "سيرفر 1",
+        "url": "http://cen2bj.mavpro.xyz:80/live/naJ7ZFF0ag/wWAstnrsgi/78395.m3u",
+        "type": "iframe"
+      },
+      {
+        "name": "سيرفر 2",
+        "url": "",
+        "type": "iframe"
+      },
+      {
+        "name": "سيرفر 3",
+        "url": "http://cen2bj.mavpro.xyz:80/live/naJ7ZFF0ag/wWAstnrsgi/40220.m3u8",
+        "type": "iframe"
+      },
+      {
+        "name": "سيرفر 4",
+        "url": "",
+        "type": "iframe"
+      }
+    ]
+  },
+  "custom_1786378703273": {
+    "id": "custom_1786378703273",
+    "sport": "football",
+    "teamA": {
+      "ar": "ريال مدريد",
+      "en": "Real Madrid"
+    },
+    "teamB": {
+      "ar": "برشلونة",
+      "en": "Barcelona"
+    },
+    "scoreA": 0,
+    "scoreB": 0,
+    "status": "live",
+    "statusText": {
+      "ar": "مباشر",
+      "en": "Live"
+    },
+    "time": {
+      "ar": "20:00",
+      "en": "20:00"
+    },
+    "venue": {
+      "ar": "سانتياغو برنابيو",
+      "en": "Santiago Bernabéu"
+    },
+    "leagueName": {
+      "en": "La Liga",
+      "ar": "الدوري الإسباني"
+    },
+    "scorers": {
+      "home": [],
+      "away": []
+    },
+    "stats": [],
+    "lineups": null,
+    "logoA": "https://images.fotmob.com/image_resources/logo/teamlogo/8633.png",
+    "logoB": "https://images.fotmob.com/image_resources/logo/teamlogo/8634.png",
+    "streamUrl": "http://line.superflash.icu:80/live/cc80a5499c/06df54952403/1836268.m3u8",
+    "streamType": "iframe",
+    "streams": [
+      {
+        "name": "FHD",
+        "url": "http://line.superflash.icu:80/live/cc80a5499c/06df54952403/1836268.m3u8",
+        "type": "iframe"
+      },
+      {
+        "name": "4K",
+        "url": "http://line.superflash.icu:80/live/cc80a5499c/06df54952403/2034167.m3u8",
+        "type": "iframe"
+      },
+      {
+        "name": "HD",
+        "url": "http://line.superflash.icu:80/live/cc80a5499c/06df54952403/1660410.m3u8",
+        "type": "iframe"
+      },
+      {
+        "name": "سيرفر 4",
+        "url": "",
+        "type": "iframe"
+      }
+    ]
+  }
+}
