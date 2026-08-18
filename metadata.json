@@ -1,6 +1,6 @@
 {
   "name": "Sports and Cinema Portal",
-  "description": "بوابة الرياضة والسينما - A sleek portal featuring Sports and Cinema sections with language and dark/light theme controls.",
+  "description": "بوابة الرياضة والسينما وجميع القنوات - A sleek portal featuring Sports, Cinema, and All TV Channels with language and dark/light theme controls.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -48,7 +48,30 @@ import {
   Zap,
   Smartphone,
   Monitor,
-  Tablet
+  Tablet,
+  Radio,
+  KeyRound,
+  Unlock,
+  ShieldCheck,
+  CheckCircle2,
+  AlertCircle,
+  QrCode,
+  Power,
+  BadgeCheck,
+  LogOut,
+  Globe,
+  Crown,
+  Download,
+  HardDrive,
+  FileJson,
+  FileUp,
+  Database,
+  History,
+  CheckCheck,
+  FolderArchive,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Save
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
@@ -58,7 +81,10 @@ import {
   sportsMatches, 
   cinemaMovies, 
   Match, 
-  Movie 
+  Movie,
+  Channel,
+  ChannelStream,
+  tvChannels
 } from "./data";
 
 import HlsVideoPlayer from "./components/HlsVideoPlayer";
@@ -245,8 +271,8 @@ export default function App() {
     }
   };
   
-  // Active section inside the middle ("sports" or "cinema")
-  const [activeTab, setActiveTab] = useState<"sports" | "cinema">("sports");
+  // Active section inside the middle ("sports", "cinema", or "channels")
+  const [activeTab, setActiveTab] = useState<"sports" | "cinema" | "channels">("sports");
   
   // Filters and search states
   const [sportsSearch, setSportsSearch] = useState("");
@@ -255,6 +281,63 @@ export default function App() {
   
   const [cinemaSearch, setCinemaSearch] = useState("");
   const [selectedGenreFilter, setSelectedGenreFilter] = useState<string>("all");
+
+  // Channels state
+  const [channelsSearch, setChannelsSearch] = useState("");
+  const [selectedChannelCategory, setSelectedChannelCategory] = useState<string>("all");
+  const [selectedPlayingChannel, setSelectedPlayingChannel] = useState<Channel | null>(null);
+  const [channelServerIndex, setChannelServerIndex] = useState<number>(0);
+  const [channelWindowMode, setChannelWindowMode] = useState<"inline" | "fullscreen">("inline");
+  const [customChannels, setCustomChannels] = useState<Channel[]>(() => {
+    try {
+      const saved = localStorage.getItem("el_portal_custom_channels");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const channelPlayerRef = useRef<HTMLDivElement>(null);
+
+  // Admin Channels Management state
+  const [adminEditingChannel, setAdminEditingChannel] = useState<Channel | null>(null);
+  const [isCreatingChannel, setIsCreatingChannel] = useState(false);
+  const [isSavingChannels, setIsSavingChannels] = useState(false);
+  const [channelFormData, setChannelFormData] = useState({
+    id: "",
+    nameAr: "",
+    nameEn: "",
+    category: "sports" as "sports" | "cinema" | "news" | "general" | "documentary" | "kids",
+    categoryNameAr: "رياضية",
+    categoryNameEn: "Sports",
+    logo: "",
+    quality: "FHD" as "4K" | "FHD" | "HD" | "SD",
+    countryAr: "",
+    countryEn: "",
+    currentProgramAr: "",
+    currentProgramEn: "",
+    streams: [
+      { nameAr: "سيرفر 1 (رئيسي)", nameEn: "Server 1 (Main)", url: "", type: "video" as "video" | "iframe", quality: "1080p" }
+    ]
+  });
+
+  // Admin Quick Match Stream Selector
+  const [adminSelectedMatchForStream, setAdminSelectedMatchForStream] = useState<string>("");
+  const [adminMatchStreamUrl, setAdminMatchStreamUrl] = useState("");
+  const [adminMatchStreamType, setAdminMatchStreamType] = useState<"video" | "iframe">("video");
+  const [adminMatchAdditionalStreams, setAdminMatchAdditionalStreams] = useState<{ name: string; url: string; type: "video" | "iframe" }[]>([]);
+  const [isSavingMatchStream, setIsSavingMatchStream] = useState(false);
+
+  const handlePlayChannel = (ch: Channel, srvIndex = 0) => {
+    if (!isAuthorizedForChannels) {
+      setIsSubscriptionModalOpen(true);
+      return;
+    }
+    setSelectedPlayingChannel(ch);
+    setChannelServerIndex(srvIndex);
+    if (channelPlayerRef.current) {
+      channelPlayerRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   // Booking simulator state
   const [selectedMovieForBooking, setSelectedMovieForBooking] = useState<Movie | null>(null);
@@ -302,8 +385,15 @@ export default function App() {
   const [logoSelectorFor, setLogoSelectorFor] = useState<"A" | "B" | null>(null);
 
   // Live Stream Player state
-  const [userRole, setUserRole] = useState<"viewer" | "admin">("viewer");
-  const [isSupportOpen, setIsSupportOpen] = useState(false);
+  const [userRole, setUserRole] = useState<"viewer" | "admin">(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("el_portal_user_role");
+        if (saved === "admin") return "admin";
+      }
+    } catch (e) {}
+    return "viewer";
+  });
   const [streamingMatch, setStreamingMatch] = useState<any | null>(null);
   const [isStreamModalOpen, setIsStreamModalOpen] = useState(false);
   const [streamUrl, setStreamUrl] = useState("");
@@ -339,15 +429,680 @@ export default function App() {
 
   const [cinemaWindowMode, setCinemaWindowMode] = useState<"inline" | "fullscreen">("inline");
 
-  // Reset full screen mode when switching away from cinema tab
+  // Reset full screen mode when switching away from cinema or channels tab
   useEffect(() => {
     if (activeTab !== "cinema" && cinemaWindowMode === "fullscreen") {
       setCinemaWindowMode("inline");
     }
-  }, [activeTab, cinemaWindowMode]);
+    if (activeTab !== "channels" && channelWindowMode === "fullscreen") {
+      setChannelWindowMode("inline");
+    }
+  }, [activeTab, cinemaWindowMode, channelWindowMode]);
 
-  // Analytics Dashboard States
-  const [adminModalTab, setAdminModalTab] = useState<"controls" | "analytics">("controls");
+  // Analytics & Subscription Dashboard States
+  const [adminModalTab, setAdminModalTab] = useState<"controls" | "streams" | "channels" | "subscriptions" | "analytics" | "backup">("controls");
+
+  // Backup & Restore Management States
+  const [isExportingBackup, setIsExportingBackup] = useState(false);
+  const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [backupRestoreMode, setBackupRestoreMode] = useState<"file" | "paste">("file");
+  const [backupPasteText, setBackupPasteText] = useState("");
+  const [parsedBackupData, setParsedBackupData] = useState<any | null>(null);
+  const [backupParseError, setBackupParseError] = useState<string | null>(null);
+  const [isBackupJsonPreviewOpen, setIsBackupJsonPreviewOpen] = useState(false);
+  const [liveBackupJsonStr, setLiveBackupJsonStr] = useState<string>("");
+  const [isCopiedBackupJson, setIsCopiedBackupJson] = useState(false);
+  const [quickSnapshotStatus, setQuickSnapshotStatus] = useState<string | null>(null);
+  const [backupSummaryData, setBackupSummaryData] = useState<any | null>(null);
+
+  // Subscription Gate & Codes Management States
+  const [subscriptionData, setSubscriptionData] = useState<{
+    code: string;
+    planType: string;
+    durationDays: number;
+    activatedAt?: string;
+    expiresAt?: string;
+    remainingDays?: number;
+    isLifetime?: boolean;
+    note?: string;
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem("el_portal_subscription");
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  const [subscriptionSettings, setSubscriptionSettings] = useState<{
+    gateEnabled: boolean;
+    title: { ar: string; en: string };
+    description: { ar: string; en: string };
+    supportContact: string;
+    supportType: "whatsapp" | "telegram" | "url" | "custom";
+  }>({
+    gateEnabled: true,
+    title: {
+      ar: "تفعيل اشتراك باقة القنوات التلفزيونية VIP",
+      en: "VIP TV Channels Subscription Activation"
+    },
+    description: {
+      ar: "يرجى إدخال كود التفعيل للوصول إلى قائمة جميع القنوات التلفزيونية والبث المباشر عالي الجودة.",
+      en: "Please enter your activation code to access all live TV channels and ultra HD streams."
+    },
+    supportContact: "https://wa.me/966500000000",
+    supportType: "whatsapp"
+  });
+
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+  const [isSubscriptionDetailsOpen, setIsSubscriptionDetailsOpen] = useState(false);
+  const [isConfirmingLogoutSubscription, setIsConfirmingLogoutSubscription] = useState(false);
+  const [activationCodeInput, setActivationCodeInput] = useState("");
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [activationError, setActivationError] = useState<string | null>(null);
+  const [activationSuccess, setActivationSuccess] = useState<string | null>(null);
+
+  // Admin Subscription Management state
+  const [adminSubscriptionCodes, setAdminSubscriptionCodes] = useState<any[]>([]);
+  const [deletingCodeId, setDeletingCodeId] = useState<string | null>(null);
+  const [adminSubscriptionStats, setAdminSubscriptionStats] = useState<{
+    total: number;
+    active: number;
+    expired: number;
+    disabled: number;
+    totalUsedDevices: number;
+  }>({ total: 0, active: 0, expired: 0, disabled: 0, totalUsedDevices: 0 });
+  const [isLoadingCodes, setIsLoadingCodes] = useState(false);
+  const [isGeneratingCodes, setIsGeneratingCodes] = useState(false);
+  const [adminCodeFilter, setAdminCodeFilter] = useState<"all" | "active" | "expired" | "disabled">("all");
+  const [adminCodeSearch, setAdminCodeSearch] = useState("");
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+  const [isSavingGateSetting, setIsSavingGateSetting] = useState(false);
+  const [supportContactEdit, setSupportContactEdit] = useState("");
+  const [codeGenForm, setCodeGenForm] = useState({
+    customCode: "",
+    prefix: "VIP",
+    planType: "30d" as "24h" | "7d" | "30d" | "90d" | "365d" | "lifetime",
+    durationDays: 30,
+    count: 1,
+    maxDevices: 1,
+    note: ""
+  });
+
+  const getDeviceId = () => {
+    try {
+      let id = localStorage.getItem("el_portal_device_id");
+      if (!id) {
+        id = "dev_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now().toString(36);
+        localStorage.setItem("el_portal_device_id", id);
+      }
+      return id;
+    } catch (e) {
+      return "dev_guest";
+    }
+  };
+
+  const isAuthorizedForChannels = useMemo(() => {
+    if (userRole === "admin") return true;
+    if (!subscriptionSettings?.gateEnabled) return true;
+    if (!subscriptionData) return false;
+    if (subscriptionData.isLifetime) return true;
+    if (subscriptionData.expiresAt) {
+      const exp = new Date(subscriptionData.expiresAt).getTime();
+      if (!isNaN(exp) && exp > Date.now()) {
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }, [userRole, subscriptionSettings?.gateEnabled, subscriptionData]);
+
+  const fetchSubscriptionSettings = async () => {
+    try {
+      const res = await fetch("/api/subscription/settings");
+      if (res.ok) {
+        const data = await res.json();
+        setSubscriptionSettings(data);
+        if (data.supportContact) {
+          setSupportContactEdit(data.supportContact);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching subscription settings:", err);
+    }
+  };
+
+  const fetchSubscriptionCodes = async () => {
+    setIsLoadingCodes(true);
+    try {
+      const res = await fetch("/api/admin/subscription/codes");
+      if (res.ok) {
+        const data = await res.json();
+        setAdminSubscriptionCodes(data.codes || []);
+        if (data.stats) {
+          setAdminSubscriptionStats(data.stats);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching subscription codes:", err);
+    } finally {
+      setIsLoadingCodes(false);
+    }
+  };
+
+  // Check stored subscription token validity on mount
+  useEffect(() => {
+    fetchSubscriptionSettings();
+    if (subscriptionData?.code) {
+      const checkStoredSubscription = async () => {
+        try {
+          const res = await fetch("/api/subscription/check-status", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: subscriptionData.code, deviceId: getDeviceId() })
+          });
+          const data = await res.json();
+          if (data.valid && data.subscription) {
+            setSubscriptionData(data.subscription);
+            localStorage.setItem("el_portal_subscription", JSON.stringify(data.subscription));
+          } else if (data.expired || !data.valid) {
+            setSubscriptionData(null);
+            localStorage.removeItem("el_portal_subscription");
+          }
+        } catch (e) {
+          // ignore
+        }
+      };
+      checkStoredSubscription();
+    }
+  }, []);
+
+  // When switching to channels tab, prompt subscription gate modal if not authorized
+  useEffect(() => {
+    if (activeTab === "channels" && subscriptionSettings?.gateEnabled && userRole !== "admin" && !isAuthorizedForChannels) {
+      setIsSubscriptionModalOpen(true);
+    }
+  }, [activeTab, subscriptionSettings?.gateEnabled, userRole, isAuthorizedForChannels]);
+
+  const handleVerifyActivationCode = async (customInputCode?: string) => {
+    const rawCode = (customInputCode || activationCodeInput).trim();
+    const codeToVerify = rawCode.toUpperCase();
+    if (!codeToVerify) {
+      setActivationError(lang === "ar" ? "يرجى كتابة كود التفعيل" : "Please enter activation code");
+      return;
+    }
+
+    // Direct check for Master Admin Access Code
+    if (codeToVerify === "@ASDDA90199090" || rawCode === "@Asdda90199090") {
+      setIsVerifyingCode(true);
+      setActivationError(null);
+      setActivationSuccess(null);
+
+      const adminSub = {
+        code: "@Asdda90199090",
+        planType: "admin",
+        durationDays: -1,
+        activatedAt: new Date().toISOString(),
+        expiresAt: "lifetime",
+        remainingDays: -1,
+        isLifetime: true,
+        maxDevices: 999,
+        activeDevicesCount: 1,
+        note: "حساب المسؤول العام - كامل الصلاحيات"
+      };
+
+      setUserRole("admin");
+      try {
+        localStorage.setItem("el_portal_user_role", "admin");
+        localStorage.setItem("el_portal_subscription", JSON.stringify(adminSub));
+      } catch (e) {
+        console.error(e);
+      }
+      setSubscriptionData(adminSub);
+      setActivationSuccess(lang === "ar" ? "تم تسجيل الدخول كمسؤول بنجاح! جاري فتح لوحة التحكم..." : "Master Admin Logged in Successfully! Opening panel...");
+
+      setTimeout(() => {
+        setIsSubscriptionModalOpen(false);
+        setActivationSuccess(null);
+        setActivationCodeInput("");
+        setIsVerifyingCode(false);
+        setIsAdminOpen(true);
+        setAdminModalTab("controls");
+        loadAdminMatchIds();
+      }, 900);
+      return;
+    }
+
+    setIsVerifyingCode(true);
+    setActivationError(null);
+    setActivationSuccess(null);
+
+    try {
+      const devId = getDeviceId();
+      const res = await fetch("/api/subscription/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: codeToVerify, deviceId: devId })
+      });
+      const data = await res.json();
+      if (data.valid && data.subscription) {
+        if (data.isAdmin || codeToVerify === "@ASDDA90199090") {
+          setUserRole("admin");
+          try {
+            localStorage.setItem("el_portal_user_role", "admin");
+          } catch (e) {}
+        }
+        setSubscriptionData(data.subscription);
+        try {
+          localStorage.setItem("el_portal_subscription", JSON.stringify(data.subscription));
+        } catch (e) {
+          console.error(e);
+        }
+        setActivationSuccess(data.message || (lang === "ar" ? "تم تفعيل الاشتراك بنجاح! مرحباً بك" : "Subscription activated successfully!"));
+        setTimeout(() => {
+          setIsSubscriptionModalOpen(false);
+          setActivationSuccess(null);
+          setActivationCodeInput("");
+          if (data.isAdmin || codeToVerify === "@ASDDA90199090") {
+            setIsAdminOpen(true);
+            setAdminModalTab("controls");
+            loadAdminMatchIds();
+          }
+        }, 1200);
+      } else {
+        setActivationError(data.message || (lang === "ar" ? "كود التفعيل غير صالح أو منتهي الصلاحية" : "Invalid or expired activation code"));
+      }
+    } catch (err) {
+      console.error("Error verifying code:", err);
+      setActivationError(lang === "ar" ? "تعذر الاتصال بالخادم للتحقق من الكود" : "Server connection error");
+    } finally {
+      setIsVerifyingCode(false);
+    }
+  };
+
+  const handleLogoutSubscription = () => {
+    try {
+      localStorage.removeItem("el_portal_subscription");
+    } catch (e) {
+      console.error(e);
+    }
+    setSubscriptionData(null);
+    setActivationCodeInput("");
+    setActivationSuccess(null);
+    setActivationError(null);
+    setIsSubscriptionDetailsOpen(false);
+    setIsConfirmingLogoutSubscription(false);
+    setSelectedPlayingChannel(null);
+  };
+
+  const handleGenerateCodes = async () => {
+    setIsGeneratingCodes(true);
+    try {
+      const res = await fetch("/api/admin/subscription/codes/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(codeGenForm)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAdminMessage({
+          text: lang === "ar" ? `تم بنجاح توليد (${data.generatedCount}) كود اشتراك جديد` : `Successfully generated ${data.generatedCount} new code(s)`,
+          type: "success"
+        });
+        setCodeGenForm({
+          customCode: "",
+          prefix: "VIP",
+          planType: "30d",
+          durationDays: 30,
+          count: 1,
+          maxDevices: 1,
+          note: ""
+        });
+        fetchSubscriptionCodes();
+      } else {
+        setAdminMessage({
+          text: lang === "ar" ? "فشل توليد الأكواد" : "Failed to generate codes",
+          type: "error"
+        });
+      }
+    } catch (e) {
+      setAdminMessage({
+        text: lang === "ar" ? "حدث خطأ أثناء الاتصال بالخادم" : "Error connecting to server",
+        type: "error"
+      });
+    } finally {
+      setIsGeneratingCodes(false);
+      setTimeout(() => setAdminMessage(null), 4000);
+    }
+  };
+
+  const handleUpdateCode = async (id: string, payload: any) => {
+    try {
+      const res = await fetch(`/api/admin/subscription/codes/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        fetchSubscriptionCodes();
+        setAdminMessage({
+          text: lang === "ar" ? "تم تحديث الكود بنجاح" : "Code updated successfully",
+          type: "success"
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTimeout(() => setAdminMessage(null), 3000);
+    }
+  };
+
+  const handleDeleteCode = async (id: string) => {
+    try {
+      setAdminSubscriptionCodes((prev) => prev.filter((c) => c.id !== id));
+      const res = await fetch(`/api/admin/subscription/codes/${id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        fetchSubscriptionCodes();
+        setAdminMessage({
+          text: lang === "ar" ? "تم حذف الكود بنجاح" : "Code deleted successfully",
+          type: "success"
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      fetchSubscriptionCodes();
+    } finally {
+      setDeletingCodeId(null);
+      setTimeout(() => setAdminMessage(null), 3000);
+    }
+  };
+
+  const handleToggleGate = async () => {
+    const newState = !subscriptionSettings.gateEnabled;
+    setIsSavingGateSetting(true);
+    try {
+      const res = await fetch("/api/admin/subscription/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gateEnabled: newState })
+      });
+      if (res.ok) {
+        setSubscriptionSettings((prev) => ({ ...prev, gateEnabled: newState }));
+        setAdminMessage({
+          text: newState 
+            ? (lang === "ar" ? "تم تفعيل قفل جدول المباريات بكود التفعيل" : "Match subscription gate enabled")
+            : (lang === "ar" ? "تم تعطيل قفل المباريات (الوصول متاح للجميع)" : "Match subscription gate disabled (Open to all)"),
+          type: "success"
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingGateSetting(false);
+      setTimeout(() => setAdminMessage(null), 4000);
+    }
+  };
+
+  const handleSaveSupportContact = async () => {
+    try {
+      const res = await fetch("/api/admin/subscription/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supportContact: supportContactEdit })
+      });
+      if (res.ok) {
+        setSubscriptionSettings((prev) => ({ ...prev, supportContact: supportContactEdit }));
+        setAdminMessage({
+          text: lang === "ar" ? "تم حفظ رابط/رقم التواصل بنجاح" : "Support contact updated successfully",
+          type: "success"
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTimeout(() => setAdminMessage(null), 3000);
+    }
+  };
+
+  const handleCopyCode = (codeStr: string, id: string) => {
+    try {
+      navigator.clipboard.writeText(codeStr);
+      setCopiedCodeId(id);
+      setTimeout(() => setCopiedCodeId(null), 2000);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCopyAllFilteredCodes = (codesList: any[]) => {
+    try {
+      const textToCopy = codesList
+        .map((c) => `${c.code} | ${c.planType} | ${c.status === "active" ? "فعال" : c.status} | ${c.note || "بدون ملاحظة"}`)
+        .join("\n");
+      navigator.clipboard.writeText(textToCopy);
+      setAdminMessage({
+        text: lang === "ar" ? `تم نسخ (${codesList.length}) كود إلى الحافظة` : `Copied ${codesList.length} code(s) to clipboard`,
+        type: "success"
+      });
+      setTimeout(() => setAdminMessage(null), 3000);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Backup & Restore Actions
+  const fetchLiveBackupData = async () => {
+    try {
+      setIsExportingBackup(true);
+      const res = await fetch("/api/admin/backup/export");
+      if (res.ok) {
+        const data = await res.json();
+        setBackupSummaryData(data.backup || data);
+        const jsonFormatted = JSON.stringify(data.backup || data, null, 2);
+        setLiveBackupJsonStr(jsonFormatted);
+        return data.backup || data;
+      }
+    } catch (err) {
+      console.error("Error fetching live backup:", err);
+    } finally {
+      setIsExportingBackup(false);
+    }
+    return null;
+  };
+
+  const handleDownloadFullBackup = async () => {
+    setIsExportingBackup(true);
+    try {
+      const backupData = await fetchLiveBackupData();
+      if (!backupData) throw new Error("Failed to load backup data");
+      
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `elite-portal-backup-${dateStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setAdminMessage({
+        text: lang === "ar" ? "تم سحب وتحميل النسخة الاحتياطية بنجاح بصيغة JSON" : "Full backup exported and downloaded successfully",
+        type: "success"
+      });
+    } catch (e) {
+      console.error(e);
+      setAdminMessage({
+        text: lang === "ar" ? "حدث خطأ أثناء سحب النسخة الاحتياطية" : "Error exporting backup",
+        type: "error"
+      });
+    } finally {
+      setIsExportingBackup(false);
+      setTimeout(() => setAdminMessage(null), 4000);
+    }
+  };
+
+  const handleCopyBackupToClipboard = async () => {
+    setIsExportingBackup(true);
+    try {
+      const backupData = await fetchLiveBackupData();
+      if (!backupData) throw new Error("Failed to load backup data");
+
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      await navigator.clipboard.writeText(jsonStr);
+      setIsCopiedBackupJson(true);
+      setTimeout(() => setIsCopiedBackupJson(false), 3000);
+
+      setAdminMessage({
+        text: lang === "ar" ? "تم نسخ كود النسخة الاحتياطية بالكامل إلى الحافظة" : "Full backup JSON copied to clipboard",
+        type: "success"
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExportingBackup(false);
+      setTimeout(() => setAdminMessage(null), 4000);
+    }
+  };
+
+  const handleFileSelectForRestore = (file: File) => {
+    setBackupParseError(null);
+    setParsedBackupData(null);
+    if (!file.name.endsWith(".json") && file.type !== "application/json" && file.type !== "text/plain") {
+      setBackupParseError(lang === "ar" ? "يرجى اختيار ملف بصيغة JSON فقط" : "Please select a JSON file only");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const parsed = JSON.parse(text);
+        const dataObj = parsed.backup || parsed;
+        if (!dataObj || typeof dataObj !== "object") {
+          throw new Error("Invalid backup format");
+        }
+        setParsedBackupData(dataObj);
+        setBackupParseError(null);
+      } catch (err: any) {
+        setBackupParseError(lang === "ar" ? "تعذر قراءة ملف النسخة الاحتياطية. تأكد من صحة تنسيق JSON." : "Invalid JSON backup file structure");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleParsePastedJson = (text: string) => {
+    setBackupPasteText(text);
+    if (!text.trim()) {
+      setParsedBackupData(null);
+      setBackupParseError(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(text);
+      const dataObj = parsed.backup || parsed;
+      if (!dataObj || typeof dataObj !== "object") {
+        throw new Error("Invalid backup format");
+      }
+      setParsedBackupData(dataObj);
+      setBackupParseError(null);
+    } catch (e) {
+      setParsedBackupData(null);
+      setBackupParseError(lang === "ar" ? "نص الـ JSON غير صالح، يرجى التأكد من لصق كود صحيح" : "Invalid JSON text");
+    }
+  };
+
+  const handleExecuteRestore = async (overrideData?: any) => {
+    const dataToRestore = overrideData || parsedBackupData;
+    if (!dataToRestore) return;
+    setIsRestoringBackup(true);
+    try {
+      const res = await fetch("/api/admin/backup/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backupData: dataToRestore })
+      });
+      if (res.ok) {
+        await Promise.all([
+          fetchChannels(),
+          fetchSubscriptionCodes(),
+          fetchSubscriptionSettings(),
+          fetchSiteSettings(),
+          fetchMatches()
+        ]);
+        setParsedBackupData(null);
+        setBackupPasteText("");
+        setAdminMessage({
+          text: lang === "ar" ? "تمت استعادة جميع تفاصيل وبيانات الموقع بنجاح!" : "All site details restored successfully!",
+          type: "success"
+        });
+      } else {
+        throw new Error("Restore failed");
+      }
+    } catch (err) {
+      console.error(err);
+      setAdminMessage({
+        text: lang === "ar" ? "حدث خطأ أثناء استعادة النسخة الاحتياطية" : "Error restoring backup",
+        type: "error"
+      });
+    } finally {
+      setIsRestoringBackup(false);
+      setTimeout(() => setAdminMessage(null), 4000);
+    }
+  };
+
+  const handleQuickLocalSnapshot = async () => {
+    try {
+      const backupData = await fetchLiveBackupData();
+      if (backupData) {
+        localStorage.setItem("el_portal_local_snapshot", JSON.stringify({
+          timestamp: new Date().toISOString(),
+          data: backupData
+        }));
+        setQuickSnapshotStatus(lang === "ar" ? "تم حفظ لقطة أمان سريعة بنجاح" : "Quick safety snapshot saved locally");
+        setTimeout(() => setQuickSnapshotStatus(null), 3000);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRestoreQuickLocalSnapshot = async () => {
+    try {
+      const saved = localStorage.getItem("el_portal_local_snapshot");
+      if (!saved) {
+        setAdminMessage({
+          text: lang === "ar" ? "لا توجد لقطة سريعة محفوظة مسبقاً في هذا المتصفح" : "No saved local snapshot found",
+          type: "error"
+        });
+        setTimeout(() => setAdminMessage(null), 3000);
+        return;
+      }
+      const parsed = JSON.parse(saved);
+      await handleExecuteRestore(parsed.data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const filteredAdminSubscriptionCodes = useMemo(() => {
+    return adminSubscriptionCodes.filter((c) => {
+      if (adminCodeFilter === "active" && c.status !== "active") return false;
+      if (adminCodeFilter === "expired" && c.status !== "expired") return false;
+      if (adminCodeFilter === "disabled" && c.status !== "disabled") return false;
+      if (adminCodeSearch) {
+        const q = adminCodeSearch.toLowerCase();
+        const matchCode = (c.code || "").toLowerCase().includes(q);
+        const matchNote = (c.note || "").toLowerCase().includes(q);
+        if (!matchCode && !matchNote) return false;
+      }
+      return true;
+    });
+  }, [adminSubscriptionCodes, adminCodeFilter, adminCodeSearch]);
+
   const [selectedAnalyticsDate, setSelectedAnalyticsDate] = useState<string>(
     new Date().toISOString().split("T")[0]
   );
@@ -706,10 +1461,205 @@ export default function App() {
     }
   };
 
+  // Load channels from server
+  const fetchChannels = async () => {
+    try {
+      const res = await fetch("/api/channels");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setCustomChannels(data);
+          try {
+            localStorage.setItem("el_portal_custom_channels", JSON.stringify(data));
+          } catch (e) {}
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load channels:", err);
+    }
+  };
+
+  const handleSaveChannelsToServer = async (channelsToSave: Channel[]) => {
+    setIsSavingChannels(true);
+    try {
+      const res = await fetch("/api/admin/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channels: channelsToSave })
+      });
+      if (res.ok) {
+        setCustomChannels(channelsToSave);
+        try {
+          localStorage.setItem("el_portal_custom_channels", JSON.stringify(channelsToSave));
+        } catch (e) {}
+        setAdminMessage({
+          text: lang === "ar" ? "تم حفظ وتحديث قائمة جميع القنوات بنجاح!" : "All channels saved and updated successfully!",
+          type: "success"
+        });
+        return true;
+      } else {
+        setAdminMessage({
+          text: lang === "ar" ? "فشل حفظ القنوات على السيرفر" : "Failed to save channels on server",
+          type: "error"
+        });
+        return false;
+      }
+    } catch (err) {
+      console.error("Error saving channels:", err);
+      setAdminMessage({
+        text: lang === "ar" ? "حدث خطأ بالاتصال أثناء حفظ القنوات" : "Connection error while saving channels",
+        type: "error"
+      });
+      return false;
+    } finally {
+      setIsSavingChannels(false);
+    }
+  };
+
+  const resetChannelForm = () => {
+    setChannelFormData({
+      id: "",
+      nameAr: "",
+      nameEn: "",
+      category: "sports",
+      categoryNameAr: "رياضية",
+      categoryNameEn: "Sports",
+      logo: "",
+      quality: "FHD",
+      countryAr: "",
+      countryEn: "",
+      currentProgramAr: "",
+      currentProgramEn: "",
+      streams: [
+        { nameAr: "سيرفر 1 (رئيسي)", nameEn: "Server 1 (Main)", url: "", type: "video", quality: "1080p" }
+      ]
+    });
+    setAdminEditingChannel(null);
+    setIsCreatingChannel(false);
+  };
+
+  const handleOpenAddChannel = () => {
+    resetChannelForm();
+    setIsCreatingChannel(true);
+    setAdminModalTab("channels");
+    setIsAdminOpen(true);
+  };
+
+  const handleOpenEditChannel = (ch: Channel) => {
+    setAdminEditingChannel(ch);
+    setIsCreatingChannel(false);
+    setChannelFormData({
+      id: ch.id,
+      nameAr: ch.name?.ar || "",
+      nameEn: ch.name?.en || "",
+      category: ch.category || "sports",
+      categoryNameAr: ch.categoryName?.ar || "رياضية",
+      categoryNameEn: ch.categoryName?.en || "Sports",
+      logo: ch.logo || "",
+      quality: ch.quality || "FHD",
+      countryAr: ch.country?.ar || "",
+      countryEn: ch.country?.en || "",
+      currentProgramAr: ch.currentProgram?.ar || "",
+      currentProgramEn: ch.currentProgram?.en || "",
+      streams: (ch.streams && ch.streams.length > 0)
+        ? ch.streams.map((s, idx) => ({
+            nameAr: s.name?.ar || `سيرفر ${idx + 1}`,
+            nameEn: s.name?.en || `Server ${idx + 1}`,
+            url: s.url || "",
+            type: s.type || "video",
+            quality: s.quality || "1080p"
+          }))
+        : [
+            { nameAr: "سيرفر 1 (رئيسي)", nameEn: "Server 1 (Main)", url: "", type: "video", quality: "1080p" }
+          ]
+    });
+    setAdminModalTab("channels");
+    setIsAdminOpen(true);
+  };
+
+  const handleSaveChannelForm = async () => {
+    if (!channelFormData.nameAr.trim() && !channelFormData.nameEn.trim()) {
+      setAdminMessage({
+        text: lang === "ar" ? "يرجى كتابة اسم القناة" : "Please enter channel name",
+        type: "error"
+      });
+      return;
+    }
+
+    const catMap: Record<string, { ar: string; en: string }> = {
+      sports: { ar: "رياضية", en: "Sports" },
+      cinema: { ar: "أفلام وسينما", en: "Movies & Cinema" },
+      news: { ar: "إخبارية", en: "News" },
+      general: { ar: "منوعة وترفيه", en: "Entertainment & TV" },
+      documentary: { ar: "وثائقية", en: "Documentary" },
+      kids: { ar: "أطفال", en: "Kids" },
+    };
+
+    const catObj = catMap[channelFormData.category] || { ar: "عامة", en: "General" };
+
+    const validStreams = channelFormData.streams.map((s, idx) => ({
+      name: {
+        ar: s.nameAr.trim() || `سيرفر ${idx + 1}`,
+        en: s.nameEn.trim() || `Server ${idx + 1}`
+      },
+      url: getEmbedUrl(s.url.trim()),
+      type: s.type,
+      quality: s.quality || "1080p"
+    }));
+
+    const channelId = channelFormData.id || `ch_${Date.now()}`;
+
+    const newChannelObj: Channel = {
+      id: channelId,
+      name: {
+        ar: channelFormData.nameAr.trim() || channelFormData.nameEn.trim(),
+        en: channelFormData.nameEn.trim() || channelFormData.nameAr.trim()
+      },
+      category: channelFormData.category,
+      categoryName: catObj,
+      logo: channelFormData.logo.trim(),
+      quality: channelFormData.quality,
+      country: (channelFormData.countryAr || channelFormData.countryEn) ? {
+        ar: channelFormData.countryAr.trim() || channelFormData.countryEn.trim(),
+        en: channelFormData.countryEn.trim() || channelFormData.countryAr.trim()
+      } : undefined,
+      currentProgram: (channelFormData.currentProgramAr || channelFormData.currentProgramEn) ? {
+        ar: channelFormData.currentProgramAr.trim() || channelFormData.currentProgramEn.trim(),
+        en: channelFormData.currentProgramEn.trim() || channelFormData.currentProgramAr.trim()
+      } : undefined,
+      streams: validStreams,
+      isLive: true,
+      featured: true
+    };
+
+    let updatedList: Channel[];
+    if (adminEditingChannel) {
+      updatedList = customChannels.map(c => c.id === adminEditingChannel.id ? newChannelObj : c);
+    } else {
+      updatedList = [newChannelObj, ...customChannels.filter(c => c.id !== channelId)];
+    }
+
+    const ok = await handleSaveChannelsToServer(updatedList);
+    if (ok) {
+      resetChannelForm();
+    }
+  };
+
+  const handleDeleteChannel = async (id: string) => {
+    const updated = customChannels.filter(c => c.id !== id);
+    const ok = await handleSaveChannelsToServer(updated);
+    if (ok) {
+      if (selectedPlayingChannel?.id === id) {
+        setSelectedPlayingChannel(null);
+      }
+    }
+  };
+
   useEffect(() => {
     fetchMatches();
     loadAdminMatchIds();
     fetchSiteSettings();
+    fetchChannels();
     const interval = setInterval(() => {
       if (!document.hidden) {
         fetchMatches();
@@ -749,6 +1699,8 @@ export default function App() {
             loadAdminMatchIds();
           } else if (data.type === "site_settings_updated") {
             fetchSiteSettings();
+          } else if (data.type === "channels_updated") {
+            fetchChannels();
           }
         } catch {
           // Heartbeats or unparseable messages ignored
@@ -1167,6 +2119,52 @@ export default function App() {
     });
   }, [selectedGenreFilter, cinemaSearch, lang]);
 
+  // Channel categories
+  const channelCategories = useMemo(() => [
+    { id: "all", label: t.all },
+    { id: "sports", label: t.sportsChannels },
+    { id: "cinema", label: t.cinemaChannels },
+    { id: "news", label: t.newsChannels },
+    { id: "general", label: t.generalChannels },
+    { id: "documentary", label: t.documentaryChannels },
+    { id: "kids", label: t.kidsChannels },
+  ], [t]);
+
+  // Combined Channels (Built-in + Custom)
+  const allChannelsList = useMemo(() => {
+    return [...tvChannels, ...customChannels];
+  }, [customChannels]);
+
+  // Filtered Channels
+  const filteredChannels = useMemo(() => {
+    return allChannelsList.filter(channel => {
+      const matchCat = selectedChannelCategory === "all" || channel.category === selectedChannelCategory;
+      const searchLower = channelsSearch.toLowerCase().trim();
+      if (!searchLower) return matchCat;
+
+      const nameAr = (channel.name?.ar || "").toLowerCase();
+      const nameEn = (channel.name?.en || "").toLowerCase();
+      const catAr = (channel.categoryName?.ar || "").toLowerCase();
+      const catEn = (channel.categoryName?.en || "").toLowerCase();
+      const currAr = (channel.currentProgram?.ar || "").toLowerCase();
+      const currEn = (channel.currentProgram?.en || "").toLowerCase();
+      const countryAr = (channel.country?.ar || "").toLowerCase();
+      const countryEn = (channel.country?.en || "").toLowerCase();
+
+      const matchesSearch = 
+        nameAr.includes(searchLower) ||
+        nameEn.includes(searchLower) ||
+        catAr.includes(searchLower) ||
+        catEn.includes(searchLower) ||
+        currAr.includes(searchLower) ||
+        currEn.includes(searchLower) ||
+        countryAr.includes(searchLower) ||
+        countryEn.includes(searchLower);
+
+      return matchCat && matchesSearch;
+    });
+  }, [allChannelsList, selectedChannelCategory, channelsSearch]);
+
   // Sync selected match details modal and streaming match with live clock tick updates
   useEffect(() => {
     if (selectedMatchForDetails) {
@@ -1376,11 +2374,46 @@ export default function App() {
               </button>
             </div>
 
+            {/* Admin Controls Button (Visible when logged in as Admin with @Asdda90199090) */}
+            {userRole === "admin" && (
+              <div className={`flex items-center gap-1.5 p-1 rounded-xl border ${
+                theme === "black" 
+                  ? "bg-red-950/40 border-red-800/60 text-red-300" 
+                  : "bg-red-50 border-red-200 text-red-800 shadow-sm"
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAdminOpen(true);
+                    setAdminModalTab("controls");
+                    loadAdminMatchIds();
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-black transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>{lang === "ar" ? "لوحة المسؤول" : "Admin Panel"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUserRole("viewer");
+                    try {
+                      localStorage.removeItem("el_portal_user_role");
+                    } catch (e) {}
+                  }}
+                  title={lang === "ar" ? "تسجيل الخروج من وضع المسؤول" : "Exit Admin Mode"}
+                  className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 transition cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
           </div>
         </div>
 
-        {/* MIDDLE SECTION: MAIN SELECTION HUBS (Sports & Cinema) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+        {/* MIDDLE SECTION: MAIN SELECTION HUBS (Sports, Cinema & All Channels) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           
           {/* Sports Hub Option */}
           <button
@@ -1474,6 +2507,52 @@ export default function App() {
             </div>
           </button>
 
+          {/* All Channels Hub Option (جميع القنوات) */}
+          <button
+            id="tab-channels"
+            onClick={() => setActiveTab("channels")}
+            className={`group text-start p-6 rounded-3xl border-2 transition-all duration-500 relative overflow-hidden block w-full cursor-pointer ${
+              activeTab === "channels"
+                ? theme === "black"
+                  ? "bg-gradient-to-br from-zinc-900 to-black border-cyan-500 shadow-2xl shadow-cyan-500/10 text-white"
+                  : "bg-white border-cyan-600 shadow-xl text-zinc-950"
+                : theme === "black"
+                  ? "bg-zinc-950/60 border-zinc-900 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200"
+                  : "bg-white/60 border-zinc-200 hover:border-zinc-400 text-zinc-500 hover:text-zinc-800"
+            }`}
+          >
+            {/* Hover background details for Channels card */}
+            <div className={`absolute -right-12 -bottom-12 w-44 h-44 rounded-full transition-all duration-500 opacity-20 group-hover:scale-125 ${
+              activeTab === "channels" ? "bg-cyan-500/20" : "bg-zinc-500/10"
+            }`} />
+
+            <div className="flex items-start justify-between relative z-10">
+              <div className={`p-4 rounded-2xl transition-all duration-500 ${
+                activeTab === "channels"
+                  ? theme === "black" ? "bg-cyan-500/20 text-cyan-400" : "bg-cyan-600 text-white"
+                  : theme === "black" ? "bg-zinc-900 text-zinc-400" : "bg-zinc-100 text-zinc-500"
+              }`}>
+                <Tv className="w-7 h-7 relative z-10" />
+              </div>
+
+              {/* Check indicator if selected */}
+              {activeTab === "channels" && (
+                <div className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest ${
+                  theme === "black" ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20" : "bg-cyan-50 text-cyan-700 border border-cyan-200"
+                }`}>
+                  {lang === "ar" ? "نشط" : "Active"}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 relative z-10">
+              <h2 className="text-xl md:text-2xl font-black">{t.channels}</h2>
+              <p className={`text-xs mt-2 leading-relaxed ${theme === 'black' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                {t.channelsDesc}
+              </p>
+            </div>
+          </button>
+
         </div>
 
         {/* DETAILED VIEWS IN THE CENTER */}
@@ -1490,209 +2569,206 @@ export default function App() {
                 transition={{ duration: 0.3 }}
                 className="space-y-6"
               >
-                
-
-
                 {/* Matches Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   
                   {filteredMatches.length > 0 ? (
                     filteredMatches.map((match, index) => {
-                      const isLive = match.status === "live";
-                      const isEnded = match.status === "ended";
-                      const teamAName = match.teamA[lang] || match.teamA.en || "";
-                      const teamBName = match.teamB[lang] || match.teamB.en || "";
-                      const timeString = formatMatchTime(match, lang);
-                      const venueString = match.venue[lang] || match.venue.en || "";
+                          const isLive = match.status === "live";
+                          const isEnded = match.status === "ended";
+                          const teamAName = match.teamA[lang] || match.teamA.en || "";
+                          const teamBName = match.teamB[lang] || match.teamB.en || "";
+                          const timeString = formatMatchTime(match, lang);
+                          const venueString = match.venue[lang] || match.venue.en || "";
 
-                      return (
-                        <div
-                          key={`${match.id}-${index}`}
-                          onClick={() => {
-                            setSelectedMatchForDetails(match);
-                            setActiveDetailsTab("events");
-                          }}
-                          className={`p-6 rounded-3xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between cursor-pointer group hover:scale-[1.01] ${
-                            theme === "black"
-                              ? isLive
-                                ? "bg-gradient-to-br from-zinc-900 to-zinc-950 border-amber-500/30 hover:border-amber-500/50"
-                                : "bg-zinc-950/40 border-zinc-800 hover:border-zinc-700"
-                              : "bg-white border-zinc-200 shadow-sm hover:shadow-md hover:border-zinc-300"
-                          }`}
-                        >
-                          {/* Live signal top line */}
-                          {isLive && (
-                            <div className="absolute top-0 inset-x-0 h-[2px] bg-amber-500 animate-pulse" />
-                          )}
-
-                          {/* Match Meta Row */}
-                          <div className="flex items-center justify-between mb-6">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${
-                              isLive 
-                                ? "bg-red-500/10 text-red-500 border border-red-500/20" 
-                                : isEnded
-                                  ? theme === "black" ? "bg-zinc-850 text-zinc-400 border border-zinc-800" : "bg-zinc-150 text-zinc-500"
-                                  : "bg-amber-500/10 text-amber-500 border border-amber-500/20"
-                            }`}>
-                              {isLive && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />}
-                              {isLive ? match.statusText?.[lang] || match.statusText?.en || t.live : isEnded ? t.ended : match.statusText?.[lang] || match.statusText?.en || t.upcoming}
-                            </span>
-
-                            <div className="flex items-center gap-2">
-                              {userRole === "admin" && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setStreamingMatch(match);
-                                    const streams = match.streams && match.streams.length > 0 
-                                      ? match.streams 
-                                      : [{ name: lang === "ar" ? "سيرفر 1" : "Server 1", url: match.streamUrl || "", type: match.streamType || "iframe" }];
-                                    setEditingStreams(streams);
-                                    setStreamUrl(streams[0]?.url || match.streamUrl || "");
-                                    setStreamType(streams[0]?.type || match.streamType || "iframe");
-                                    setIsStreamModalOpen(true);
-                                  }}
-                                  className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 rounded-lg text-[10px] font-black flex items-center gap-1 transition cursor-pointer"
-                                  title={lang === "ar" ? "إضافة أو تعديل روابط البث لهذه المباراة" : "Add or Edit Streams for this Match"}
-                                >
-                                  <Tv className="w-3 h-3" />
-                                  <span>{lang === "ar" ? "إدارة البث" : "Manage Stream"}</span>
-                                </button>
+                          return (
+                            <div
+                              key={`${match.id}-${index}`}
+                              onClick={() => {
+                                setSelectedMatchForDetails(match);
+                                setActiveDetailsTab("events");
+                              }}
+                              className={`p-6 rounded-3xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between cursor-pointer group hover:scale-[1.01] ${
+                                theme === "black"
+                                  ? isLive
+                                    ? "bg-gradient-to-br from-zinc-900 to-zinc-950 border-amber-500/30 hover:border-amber-500/50"
+                                    : "bg-zinc-950/40 border-zinc-800 hover:border-zinc-700"
+                                  : "bg-white border-zinc-200 shadow-sm hover:shadow-md hover:border-zinc-300"
+                              }`}
+                            >
+                              {/* Live signal top line */}
+                              {isLive && (
+                                <div className="absolute top-0 inset-x-0 h-[2px] bg-amber-500 animate-pulse" />
                               )}
-                              <span className={`text-[10px] font-mono tracking-wider ${theme === 'black' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                {timeString}
-                              </span>
-                            </div>
-                          </div>
 
-                          {/* Competitors Layout */}
-                          <div className="grid grid-cols-3 items-center gap-2 mb-6">
-                            {/* Team A */}
-                            <div className="text-center">
-                              <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center font-bold text-lg mb-2 shadow-sm overflow-hidden ${
-                                theme === "black" ? "bg-zinc-900 border border-zinc-800 text-zinc-100" : "bg-zinc-100 border border-zinc-200 text-zinc-900"
-                              }`}>
-                                {match.logoA ? (
-                                  <img 
-                                    src={match.logoA} 
-                                    alt={teamAName} 
-                                    className="w-8 h-8 object-contain"
-                                    referrerPolicy="no-referrer"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = ""; // Clear src if loading fails
-                                    }}
-                                  />
-                                ) : (
-                                  teamAName.charAt(0)
-                                )}
-                              </div>
-                              <p className="text-xs font-bold truncate">{teamAName}</p>
-                            </div>
+                              {/* Match Meta Row */}
+                              <div className="flex items-center justify-between mb-6">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${
+                                  isLive 
+                                    ? "bg-red-500/10 text-red-500 border border-red-500/20" 
+                                    : isEnded
+                                      ? theme === "black" ? "bg-zinc-850 text-zinc-400 border border-zinc-800" : "bg-zinc-150 text-zinc-500"
+                                      : "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                                }`}>
+                                  {isLive && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />}
+                                  {isLive ? match.statusText?.[lang] || match.statusText?.en || t.live : isEnded ? t.ended : match.statusText?.[lang] || match.statusText?.en || t.upcoming}
+                                </span>
 
-                            {/* Play Button instead of Score */}
-                            <div className="text-center flex flex-col items-center justify-center">
-                              {shouldShowPlayButton(match) ? (
-                                <>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setStreamingMatch(match);
-                                      setStreamUrl(match.streamUrl || "");
-                                      setStreamType(match.streamType || "iframe");
-                                      setIsStreamModalOpen(true);
-                                    }}
-                                    className="w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 text-black flex items-center justify-center shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 transition-all transform hover:scale-110 active:scale-95 group/play border border-amber-600/15"
-                                    title={lang === "ar" ? "تشغيل البث المباشر" : "Watch Live Stream"}
-                                  >
-                                    <Play className="w-5 h-5 fill-current ml-0.5 text-black" />
-                                  </button>
-                                  <span className="text-[10px] font-black text-amber-500 mt-2.5 block tracking-wider uppercase animate-pulse">
-                                    {userRole === "viewer" && !getStreamAvailability(match, currentTime).isAvailable
-                                      ? (lang === "ar" ? "يفتح قبل 15د" : "Opens in 15m")
-                                      : (lang === "ar" ? "بث مباشر" : "Live Stream")}
+                                <div className="flex items-center gap-2">
+                                  {userRole === "admin" && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setStreamingMatch(match);
+                                        const streams = match.streams && match.streams.length > 0 
+                                          ? match.streams 
+                                          : [{ name: lang === "ar" ? "سيرفر 1" : "Server 1", url: match.streamUrl || "", type: match.streamType || "iframe" }];
+                                        setEditingStreams(streams);
+                                        setStreamUrl(streams[0]?.url || match.streamUrl || "");
+                                        setStreamType(streams[0]?.type || match.streamType || "iframe");
+                                        setIsStreamModalOpen(true);
+                                      }}
+                                      className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 rounded-lg text-[10px] font-black flex items-center gap-1 transition cursor-pointer"
+                                      title={lang === "ar" ? "إضافة أو تعديل روابط البث لهذه المباراة" : "Add or Edit Streams for this Match"}
+                                    >
+                                      <Tv className="w-3 h-3" />
+                                      <span>{lang === "ar" ? "إدارة البث" : "Manage Stream"}</span>
+                                    </button>
+                                  )}
+                                  <span className={`text-[10px] font-mono tracking-wider ${theme === 'black' ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                                    {timeString}
                                   </span>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
-                                    <span className="text-lg font-black font-mono tracking-tight text-white">{match.scoreA !== undefined ? match.scoreA : 0}</span>
-                                    <span className="text-zinc-500 font-bold text-sm">:</span>
-                                    <span className="text-lg font-black font-mono tracking-tight text-white">{match.scoreB !== undefined ? match.scoreB : 0}</span>
-                                  </div>
-                                  <span className={`text-[9px] font-extrabold mt-2.5 px-2.5 py-0.5 rounded-full border tracking-wide uppercase ${
-                                    match.status === "ended" 
-                                      ? "bg-zinc-900/50 text-zinc-500 border-zinc-850" 
-                                      : "bg-amber-500/5 text-amber-500/70 border-amber-500/10"
+                                </div>
+                              </div>
+
+                              {/* Competitors Layout */}
+                              <div className="grid grid-cols-3 items-center gap-2 mb-6">
+                                {/* Team A */}
+                                <div className="text-center">
+                                  <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center font-bold text-lg mb-2 shadow-sm overflow-hidden ${
+                                    theme === "black" ? "bg-zinc-900 border border-zinc-800 text-zinc-100" : "bg-zinc-100 border border-zinc-200 text-zinc-900"
                                   }`}>
-                                    {match.status === "ended" 
-                                      ? (lang === "ar" ? "انتهت" : "Ended") 
-                                      : (lang === "ar" ? "قريباً" : "Upcoming")}
-                                  </span>
-                                </>
-                              )}
-                            </div>
+                                    {match.logoA ? (
+                                      <img 
+                                        src={match.logoA} 
+                                        alt={teamAName} 
+                                        className="w-8 h-8 object-contain"
+                                        referrerPolicy="no-referrer"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).src = ""; // Clear src if loading fails
+                                        }}
+                                      />
+                                    ) : (
+                                      teamAName.charAt(0)
+                                    )}
+                                  </div>
+                                  <p className="text-xs font-bold truncate">{teamAName}</p>
+                                </div>
 
-                            {/* Team B */}
-                            <div className="text-center">
-                              <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center font-bold text-lg mb-2 shadow-sm overflow-hidden ${
-                                theme === "black" ? "bg-zinc-900 border border-zinc-800 text-zinc-100" : "bg-zinc-100 border border-zinc-200 text-zinc-900"
+                                {/* Play Button instead of Score */}
+                                <div className="text-center flex flex-col items-center justify-center">
+                                  {shouldShowPlayButton(match) ? (
+                                    <>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setStreamingMatch(match);
+                                          setStreamUrl(match.streamUrl || "");
+                                          setStreamType(match.streamType || "iframe");
+                                          setIsStreamModalOpen(true);
+                                        }}
+                                        className="w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 text-black flex items-center justify-center shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 transition-all transform hover:scale-110 active:scale-95 group/play border border-amber-600/15"
+                                        title={lang === "ar" ? "تشغيل البث المباشر" : "Watch Live Stream"}
+                                      >
+                                        <Play className="w-5 h-5 fill-current ml-0.5 text-black" />
+                                      </button>
+                                      <span className="text-[10px] font-black text-amber-500 mt-2.5 block tracking-wider uppercase animate-pulse">
+                                        {userRole === "viewer" && !getStreamAvailability(match, currentTime).isAvailable
+                                          ? (lang === "ar" ? "يفتح قبل 15د" : "Opens in 15m")
+                                          : (lang === "ar" ? "بث مباشر" : "Live Stream")}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
+                                        <span className="text-lg font-black font-mono tracking-tight text-white">{match.scoreA !== undefined ? match.scoreA : 0}</span>
+                                        <span className="text-zinc-500 font-bold text-sm">:</span>
+                                        <span className="text-lg font-black font-mono tracking-tight text-white">{match.scoreB !== undefined ? match.scoreB : 0}</span>
+                                      </div>
+                                      <span className={`text-[9px] font-extrabold mt-2.5 px-2.5 py-0.5 rounded-full border tracking-wide uppercase ${
+                                        match.status === "ended" 
+                                          ? "bg-zinc-900/50 text-zinc-500 border-zinc-850" 
+                                          : "bg-amber-500/5 text-amber-500/70 border-amber-500/10"
+                                      }`}>
+                                        {match.status === "ended" 
+                                          ? (lang === "ar" ? "انتهت" : "Ended") 
+                                          : (lang === "ar" ? "قريباً" : "Upcoming")}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+
+                                {/* Team B */}
+                                <div className="text-center">
+                                  <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center font-bold text-lg mb-2 shadow-sm overflow-hidden ${
+                                    theme === "black" ? "bg-zinc-900 border border-zinc-800 text-zinc-100" : "bg-zinc-100 border border-zinc-200 text-zinc-900"
+                                  }`}>
+                                    {match.logoB ? (
+                                      <img 
+                                        src={match.logoB} 
+                                        alt={teamBName} 
+                                        className="w-8 h-8 object-contain"
+                                        referrerPolicy="no-referrer"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).src = ""; // Clear src if loading fails
+                                        }}
+                                      />
+                                    ) : (
+                                      teamBName.charAt(0)
+                                    )}
+                                  </div>
+                                  <p className="text-xs font-bold truncate">{teamBName}</p>
+                                </div>
+                              </div>
+
+                              {/* Venue & League Details */}
+                              <div className={`flex items-center justify-between gap-4 pt-4 border-t text-[11px] ${
+                                theme === "black" ? "border-zinc-900/80 text-zinc-500" : "border-zinc-100 text-zinc-500"
                               }`}>
-                                {match.logoB ? (
-                                  <img 
-                                    src={match.logoB} 
-                                    alt={teamBName} 
-                                    className="w-8 h-8 object-contain"
-                                    referrerPolicy="no-referrer"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = ""; // Clear src if loading fails
-                                    }}
-                                  />
-                                ) : (
-                                  teamBName.charAt(0)
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                  <span className="font-medium truncate">{venueString}</span>
+                                </div>
+                                {match.leagueName && (
+                                  <div className="flex items-center gap-1.5 shrink-0 max-w-[50%]">
+                                    {match.leagueLogo && (
+                                      <img 
+                                        src={match.leagueLogo} 
+                                        alt="League" 
+                                        className="w-3.5 h-3.5 object-contain"
+                                        referrerPolicy="no-referrer"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).style.display = 'none';
+                                        }}
+                                      />
+                                    )}
+                                    <span className="font-bold opacity-85 text-[10px] truncate">{getTranslation(match.leagueName)}</span>
+                                  </div>
                                 )}
                               </div>
-                              <p className="text-xs font-bold truncate">{teamBName}</p>
-                            </div>
-                          </div>
 
-                          {/* Venue & League Details */}
-                          <div className={`flex items-center justify-between gap-4 pt-4 border-t text-[11px] ${
-                            theme === "black" ? "border-zinc-900/80 text-zinc-500" : "border-zinc-100 text-zinc-500"
-                          }`}>
-                            <div className="flex items-center gap-1.5 truncate">
-                              <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                              <span className="font-medium truncate">{venueString}</span>
                             </div>
-                            {match.leagueName && (
-                              <div className="flex items-center gap-1.5 shrink-0 max-w-[50%]">
-                                {match.leagueLogo && (
-                                  <img 
-                                    src={match.leagueLogo} 
-                                    alt="League" 
-                                    className="w-3.5 h-3.5 object-contain"
-                                    referrerPolicy="no-referrer"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).style.display = 'none';
-                                    }}
-                                  />
-                                )}
-                                <span className="font-bold opacity-85 text-[10px] truncate">{getTranslation(match.leagueName)}</span>
-                              </div>
-                            )}
-                          </div>
-
+                          );
+                        })
+                      ) : (
+                        <div className="col-span-1 lg:col-span-2 text-center py-16">
+                          <Tv className="w-12 h-12 mx-auto text-zinc-650 mb-3 stroke-1" />
+                          <p className={`text-sm ${theme === 'black' ? 'text-zinc-500' : 'text-zinc-400'}`}>{t.noResults}</p>
                         </div>
-                      );
-                    })
-                  ) : (
-                    <div className="col-span-1 lg:col-span-2 text-center py-16">
-                      <Tv className="w-12 h-12 mx-auto text-zinc-650 mb-3 stroke-1" />
-                      <p className={`text-sm ${theme === 'black' ? 'text-zinc-500' : 'text-zinc-400'}`}>{t.noResults}</p>
-                    </div>
-                  )}
+                      )}
 
-                </div>
+                    </div>
 
               </motion.div>
             )}
@@ -1835,6 +2911,863 @@ export default function App() {
                 )}
               </motion.div>
             )}
+
+            {/* 3. ALL CHANNELS TAB CONTENT (جميع القنوات) */}
+            {activeTab === "channels" && (
+              <motion.div
+                key="channels-view"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-8"
+              >
+                {/* SUBSCRIPTION GATE FOR CHANNELS (If NOT authorized & gate is enabled) */}
+                {!isAuthorizedForChannels ? (
+                  <div className={`p-6 sm:p-10 rounded-3xl border relative overflow-hidden shadow-2xl space-y-8 ${
+                    theme === "black"
+                      ? "border-cyan-500/30 bg-gradient-to-b from-cyan-500/10 via-zinc-950/90 to-zinc-950"
+                      : "border-cyan-200 bg-gradient-to-b from-cyan-50/70 via-white to-zinc-50 shadow-xl"
+                  }`}>
+                    {/* Background glow orb */}
+                    <div className="absolute top-0 right-1/2 translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none" />
+
+                    <div className="relative z-10 text-center max-w-2xl mx-auto space-y-4">
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto rounded-3xl bg-gradient-to-tr from-cyan-500 to-blue-500 text-black flex items-center justify-center shadow-xl shadow-cyan-500/25 animate-pulse">
+                        <Lock className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+                      </div>
+
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/20 border border-cyan-500/30 text-cyan-500 text-xs font-black uppercase tracking-wider">
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>{lang === "ar" ? "باقة القنوات التلفزيونية المشفرة VIP" : "VIP TV Channels Access"}</span>
+                      </div>
+
+                      <h3 className={`text-2xl sm:text-3xl font-black tracking-tight ${theme === "black" ? "text-white" : "text-zinc-950"}`}>
+                        {subscriptionSettings?.title?.[lang] || (lang === "ar" ? "تفعيل اشتراك باقة القنوات التلفزيونية VIP" : "VIP TV Channels Subscription Activation")}
+                      </h3>
+
+                      <p className={`text-xs sm:text-sm leading-relaxed ${theme === "black" ? "text-zinc-300" : "text-zinc-600"}`}>
+                        {subscriptionSettings?.description?.[lang] || (lang === "ar" 
+                          ? "يرجى إدخال كود التفعيل للوصول إلى قائمة جميع القنوات التلفزيونية والبث المباشر عالي الجودة."
+                          : "Please enter your activation code to access all live TV channels and ultra HD streams.")}
+                      </p>
+                    </div>
+
+                    {/* Activation Code Form */}
+                    <div className={`relative z-10 max-w-md mx-auto p-5 sm:p-6 rounded-2xl shadow-xl space-y-4 border ${
+                      theme === "black" ? "bg-zinc-900/90 border-zinc-800" : "bg-white border-zinc-200 shadow-md"
+                    }`}>
+                      {activationError && (
+                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{activationError}</span>
+                        </div>
+                      )}
+
+                      {activationSuccess && (
+                        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-bold flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          <span>{activationSuccess}</span>
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <label className={`text-[11px] font-extrabold uppercase tracking-wider block ${theme === "black" ? "text-zinc-400" : "text-zinc-600"}`}>
+                          {lang === "ar" ? "أدخل كود الاشتراك (Activation Code):" : "Enter Activation Code:"}
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            dir="ltr"
+                            value={activationCodeInput}
+                            onChange={(e) => setActivationCodeInput(e.target.value.toUpperCase())}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                handleVerifyActivationCode();
+                              }
+                            }}
+                            placeholder="VIP-XXXX-XXXX"
+                            className={`w-full px-4 py-3 rounded-xl text-center font-mono font-black text-base tracking-widest uppercase focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 border ${
+                              theme === "black"
+                                ? "bg-zinc-950 border-zinc-700 text-white"
+                                : "bg-zinc-50 border-zinc-300 text-zinc-900 focus:bg-white"
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleVerifyActivationCode()}
+                        disabled={isVerifyingCode}
+                        className="w-full py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black text-sm font-black transition flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isVerifyingCode ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>{lang === "ar" ? "جاري التحقق من الكود..." : "Verifying Code..."}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Unlock className="w-4 h-4" />
+                            <span>{lang === "ar" ? "تفعيل الاشتراك والدخول للقنوات" : "Activate Subscription & Access Channels"}</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* Contact support button to buy code */}
+                      <div className={`pt-3 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs ${
+                        theme === "black" ? "border-zinc-800" : "border-zinc-200"
+                      }`}>
+                        <span className={`text-[11px] ${theme === "black" ? "text-zinc-400" : "text-zinc-500"}`}>
+                          {lang === "ar" ? "لا تمتلك كود اشتراك؟" : "Don't have an activation code?"}
+                        </span>
+                        <a
+                          href={subscriptionSettings.supportContact || "https://wa.me/966500000000"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-500 border border-emerald-500/30 font-bold flex items-center gap-1.5 transition"
+                        >
+                          <Smartphone className="w-3.5 h-3.5" />
+                          <span>{lang === "ar" ? "طلب كود تفعيل فوري" : "Get Activation Code"}</span>
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* VIP Promotion & Features Grid */}
+                    <div className="relative z-10 space-y-6 pt-2 max-w-4xl mx-auto">
+                      {/* Section Title */}
+                      <div className="text-center space-y-1.5">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs font-black">
+                          <Crown className="w-3.5 h-3.5" />
+                          <span>{lang === "ar" ? "مميزات باقة VIP الحصرية" : "Exclusive VIP Features"}</span>
+                        </div>
+                        <h4 className={`text-base sm:text-lg font-black ${theme === "black" ? "text-white" : "text-zinc-950"}`}>
+                          {lang === "ar" ? "لماذا تختار اشتراك القنوات VIP معنا؟" : "Why Choose Our VIP TV Subscription?"}
+                        </h4>
+                      </div>
+
+                      {/* 4 Core Features Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                        {/* 1. جميع القنوات حول العالم */}
+                        <div className={`p-4 rounded-2xl border text-center flex flex-col items-center justify-between space-y-3 transition-all duration-300 hover:scale-[1.02] ${
+                          theme === "black" 
+                            ? "bg-zinc-900/70 border-zinc-800/90 hover:border-cyan-500/40 hover:bg-zinc-900" 
+                            : "bg-white border-zinc-200 shadow-sm hover:border-cyan-400 hover:shadow-md"
+                        }`}>
+                          <div className="w-11 h-11 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-500 shadow-inner">
+                            <Globe className="w-5 h-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <h5 className={`text-xs font-black ${theme === "black" ? "text-white" : "text-zinc-900"}`}>
+                              {lang === "ar" ? "1. جميع القنوات حول العالم" : "1. Worldwide TV Channels"}
+                            </h5>
+                            <p className={`text-[11px] leading-relaxed ${theme === "black" ? "text-zinc-400" : "text-zinc-500"}`}>
+                              {lang === "ar" 
+                                ? "آلاف القنوات الرياضية، الإخبارية، الترفيهية، والأفلام المشفرة من كافة دول العالم."
+                                : "Thousands of premium global sports, news, cinema, and entertainment channels."}
+                            </p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-cyan-500/10 text-cyan-500 border border-cyan-500/20">
+                            {lang === "ar" ? "تغطية عالمية" : "Global"}
+                          </span>
+                        </div>
+
+                        {/* 2. خدمة سلسة وسريعة */}
+                        <div className={`p-4 rounded-2xl border text-center flex flex-col items-center justify-between space-y-3 transition-all duration-300 hover:scale-[1.02] ${
+                          theme === "black" 
+                            ? "bg-zinc-900/70 border-zinc-800/90 hover:border-amber-500/40 hover:bg-zinc-900" 
+                            : "bg-white border-zinc-200 shadow-sm hover:border-amber-400 hover:shadow-md"
+                        }`}>
+                          <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-500 shadow-inner">
+                            <Zap className="w-5 h-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <h5 className={`text-xs font-black ${theme === "black" ? "text-white" : "text-zinc-900"}`}>
+                              {lang === "ar" ? "2. خدمة سلسة وسريعة" : "2. Fast & Smooth Service"}
+                            </h5>
+                            <p className={`text-[11px] leading-relaxed ${theme === "black" ? "text-zinc-400" : "text-zinc-500"}`}>
+                              {lang === "ar" 
+                                ? "سيرفرات فائقة السرعة مع تبديل فوري بين السيرفرات لضمان عدم التقطيع أثناء الضغط."
+                                : "High-speed multi-servers ensuring zero buffering and instant responsive switching."}
+                            </p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                            {lang === "ar" ? "بدون تقطيع" : "Zero Buffering"}
+                          </span>
+                        </div>
+
+                        {/* 3. دقة 4K فائقة الوضوح */}
+                        <div className={`p-4 rounded-2xl border text-center flex flex-col items-center justify-between space-y-3 transition-all duration-300 hover:scale-[1.02] ${
+                          theme === "black" 
+                            ? "bg-zinc-900/70 border-zinc-800/90 hover:border-emerald-500/40 hover:bg-zinc-900" 
+                            : "bg-white border-zinc-200 shadow-sm hover:border-emerald-400 hover:shadow-md"
+                        }`}>
+                          <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-500 shadow-inner">
+                            <Sparkles className="w-5 h-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <h5 className={`text-xs font-black ${theme === "black" ? "text-white" : "text-zinc-900"}`}>
+                              {lang === "ar" ? "3. دقة 4K فائقة الوضوح" : "3. Ultra 4K & FHD Quality"}
+                            </h5>
+                            <p className={`text-[11px] leading-relaxed ${theme === "black" ? "text-zinc-400" : "text-zinc-500"}`}>
+                              {lang === "ar" 
+                                ? "أعلى جودة بث مرئي وصوتي نقي بدقة 4K و FHD مع دعم الشاشات الذكية والجوالات."
+                                : "Crisp 4K UHD and FHD stream resolutions with rich immersive multi-channel sound."}
+                            </p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                            4K Ultra HD
+                          </span>
+                        </div>
+
+                        {/* 4. إزالة الإعلانات من الموقع لتجربة سلسة */}
+                        <div className={`p-4 rounded-2xl border text-center flex flex-col items-center justify-between space-y-3 transition-all duration-300 hover:scale-[1.02] ${
+                          theme === "black" 
+                            ? "bg-zinc-900/70 border-zinc-800/90 hover:border-purple-500/40 hover:bg-zinc-900" 
+                            : "bg-white border-zinc-200 shadow-sm hover:border-purple-400 hover:shadow-md"
+                        }`}>
+                          <div className="w-11 h-11 rounded-2xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-500 shadow-inner">
+                            <ShieldCheck className="w-5 h-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <h5 className={`text-xs font-black ${theme === "black" ? "text-white" : "text-zinc-900"}`}>
+                              {lang === "ar" ? "4. إزالة الإعلانات بالكامل" : "4. 100% Ad-Free Experience"}
+                            </h5>
+                            <p className={`text-[11px] leading-relaxed ${theme === "black" ? "text-zinc-400" : "text-zinc-500"}`}>
+                              {lang === "ar" 
+                                ? "تجربة تصفح ومشاهدة نقية 100% بدون أي إعلانات مزعجة أو نوافذ منبثقة."
+                                : "Pure distraction-free viewing with zero popup ads or banner interruptions."}
+                            </p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500/10 text-purple-500 border border-purple-500/20">
+                            {lang === "ar" ? "بدون إعلانات" : "Ad-Free"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Promotion Action Buttons (Subscribe / Free Trial) */}
+                      <div className={`p-4 sm:p-5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-4 ${
+                        theme === "black"
+                          ? "bg-gradient-to-r from-cyan-950/40 via-zinc-900 to-amber-950/30 border-zinc-800"
+                          : "bg-gradient-to-r from-cyan-50/80 via-white to-amber-50/80 border-zinc-200 shadow-sm"
+                      }`}>
+                        <div className="text-center sm:text-start space-y-0.5">
+                          <h5 className={`text-xs sm:text-sm font-black ${theme === "black" ? "text-white" : "text-zinc-950"}`}>
+                            {lang === "ar" ? "جاهز للاستمتاع بأفضل تجربة مشاهدة؟" : "Ready for the Ultimate TV Experience?"}
+                          </h5>
+                          <p className={`text-[11px] ${theme === "black" ? "text-zinc-400" : "text-zinc-600"}`}>
+                            {lang === "ar" 
+                              ? "اختر باقتك المفضلة الآن أو اطلب تجربة مجانية لاختبار الجودة فوراً."
+                              : "Choose your plan or request a free test trial right now."}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 w-full sm:w-auto shrink-0">
+                          {/* Free Trial Button */}
+                          <a
+                            href={
+                              subscriptionSettings.supportContact?.includes("wa.me")
+                                ? `${subscriptionSettings.supportContact}?text=${encodeURIComponent(lang === "ar" ? "مرحباً، أود طلب تجربة مجانية لباقة القنوات VIP" : "Hello, I would like to request a Free Trial for VIP Channels")}`
+                                : subscriptionSettings.supportContact || "https://wa.me/966500000000"
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 border cursor-pointer ${
+                              theme === "black"
+                                ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700 hover:border-zinc-500"
+                                : "bg-white hover:bg-zinc-100 text-zinc-800 border-zinc-300 shadow-sm"
+                            }`}
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                            <span>{lang === "ar" ? "طلب تجربة مجانية" : "Free Trial"}</span>
+                          </a>
+
+                          {/* Subscribe Now Button */}
+                          <a
+                            href={
+                              subscriptionSettings.supportContact?.includes("wa.me")
+                                ? `${subscriptionSettings.supportContact}?text=${encodeURIComponent(lang === "ar" ? "مرحباً، أريد الاشتراك في باقة القنوات VIP والحصول على كود التفعيل" : "Hello, I want to subscribe to VIP Channels and get an activation code")}`
+                                : subscriptionSettings.supportContact || "https://wa.me/966500000000"
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black text-xs font-black transition flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/25 cursor-pointer"
+                          >
+                            <Crown className="w-3.5 h-3.5" />
+                            <span>{lang === "ar" ? "اشترك الآن VIP" : "Subscribe Now"}</span>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* VIP SUBSCRIPTION ACTIVE BAR (When Authorized) */}
+                    <div className={`p-3.5 sm:p-4 rounded-2xl border flex flex-wrap items-center justify-between gap-3 shadow-md ${
+                      theme === "black"
+                        ? "bg-gradient-to-r from-cyan-500/10 via-zinc-900 to-zinc-950 border-cyan-500/30"
+                        : "bg-gradient-to-r from-cyan-50 via-white to-zinc-50 border-cyan-200 shadow-sm text-zinc-900"
+                    }`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-500 shrink-0">
+                          <BadgeCheck className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-black ${theme === "black" ? "text-white" : "text-zinc-900"}`}>
+                              {userRole === "admin" 
+                                ? (lang === "ar" ? "وصول مدير النظام الكامل لجميع القنوات" : "Admin Full Channels Access")
+                                : (lang === "ar" ? "اشتراك باقة القنوات VIP نشط" : "VIP Channels Subscription Active")
+                              }
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 text-[10px] font-extrabold">
+                              {userRole === "admin"
+                                ? (lang === "ar" ? "مدير النظام" : "Admin")
+                                : (subscriptionData?.isLifetime ? (lang === "ar" ? "دائم مدى الحياة" : "Lifetime") : (lang === "ar" ? `متبقي ${subscriptionData?.remainingDays || 30} يوم` : `${subscriptionData?.remainingDays || 30} days left`))
+                              }
+                            </span>
+                          </div>
+                          <p className={`text-[10px] mt-0.5 ${theme === "black" ? "text-zinc-400" : "text-zinc-500"}`}>
+                            {userRole === "admin"
+                              ? (lang === "ar" ? "لديك صلاحيات كاملة لمشاهدة وإدارة وتعديل جميع القنوات." : "Full permissions to manage and watch all channels.")
+                              : (lang === "ar" ? `كود الاشتراك: ${subscriptionData?.code}` : `Code: ${subscriptionData?.code}`)
+                            }
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {userRole !== "admin" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsConfirmingLogoutSubscription(false);
+                              setIsSubscriptionDetailsOpen(true);
+                            }}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+                              theme === "black"
+                                ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700"
+                                : "bg-white hover:bg-zinc-100 text-zinc-800 border-zinc-300 shadow-sm"
+                            }`}
+                          >
+                            <KeyRound className="w-3.5 h-3.5 text-cyan-500" />
+                            <span>{lang === "ar" ? "تفاصيل الاشتراك" : "Subscription Info"}</span>
+                          </button>
+                        )}
+                        {userRole === "admin" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAdminOpen(true);
+                              setAdminModalTab("subscriptions");
+                              fetchSubscriptionCodes();
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" />
+                            <span>{lang === "ar" ? "إدارة الأكواد" : "Manage Codes"}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Fullscreen Mobile & Tablet View for Active Channel */}
+                    {channelWindowMode === "fullscreen" && selectedPlayingChannel && (
+                  <div className="fixed inset-0 z-[100] bg-black w-screen h-screen flex flex-col p-0 m-0 overflow-hidden">
+                    {/* Fullscreen Header */}
+                    <div className="p-3 bg-zinc-950/95 border-b border-zinc-800 flex items-center justify-between shrink-0">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center overflow-hidden">
+                          {selectedPlayingChannel.logo ? (
+                            <img
+                              src={selectedPlayingChannel.logo}
+                              alt={selectedPlayingChannel.name[lang] || selectedPlayingChannel.name.en}
+                              className="w-full h-full object-contain p-1"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                          ) : (
+                            <Tv className="w-4 h-4 text-cyan-400" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black text-white">
+                              {selectedPlayingChannel.name[lang] || selectedPlayingChannel.name.en}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-600 text-white flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                              LIVE
+                            </span>
+                          </div>
+                          {selectedPlayingChannel.currentProgram && (
+                            <p className="text-[10px] text-zinc-400 truncate max-w-xs">
+                              {selectedPlayingChannel.currentProgram[lang] || selectedPlayingChannel.currentProgram.en}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Server Selection in Fullscreen */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {selectedPlayingChannel.streams && selectedPlayingChannel.streams.length > 1 && (
+                          <div className="flex items-center gap-1 bg-zinc-900/90 p-1 rounded-xl border border-zinc-800">
+                            <span className="text-[10px] font-black text-zinc-400 px-1.5 hidden md:inline">
+                              {lang === "ar" ? "السيرفر:" : "Server:"}
+                            </span>
+                            {selectedPlayingChannel.streams.map((st, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => setChannelServerIndex(idx)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                  channelServerIndex === idx
+                                    ? "bg-cyan-500 text-black font-black shadow-sm"
+                                    : "text-zinc-400 hover:text-white"
+                                }`}
+                              >
+                                <Radio className={`w-3 h-3 ${channelServerIndex === idx ? "text-black animate-pulse" : "text-zinc-500"}`} />
+                                <span>{st.name[lang] || st.name.en || `${t.server} ${idx + 1}`}</span>
+                                {st.quality && (
+                                  <span className="text-[9px] opacity-75">({st.quality})</span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => setChannelWindowMode("inline")}
+                          className="px-3 py-1.5 rounded-xl bg-zinc-800 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md border border-zinc-700 hover:bg-zinc-700 cursor-pointer"
+                        >
+                          <Minimize2 className="w-4 h-4" />
+                          <span className="hidden xs:inline">{lang === "ar" ? "خروج من الشاشة الكاملة" : "Exit Fullscreen"}</span>
+                        </button>
+
+                        <button
+                          onClick={() => setChannelWindowMode("inline")}
+                          className="p-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Fullscreen Player Stream */}
+                    <div className="flex-1 w-full h-full bg-black relative flex items-center justify-center">
+                      {(() => {
+                        const currentStream = selectedPlayingChannel.streams?.[channelServerIndex] || selectedPlayingChannel.streams?.[0];
+                        const streamUrl = currentStream?.url || "";
+                        const streamType = currentStream?.type || "hls";
+
+                        if (isStreamVideoOrHls(streamUrl, streamType)) {
+                          return (
+                            <HlsVideoPlayer
+                              src={streamUrl}
+                              className="w-full h-full object-contain"
+                              lang={lang}
+                            />
+                          );
+                        } else {
+                          return (
+                            <iframe
+                              id="channel-fullscreen-iframe"
+                              src={streamUrl}
+                              title={selectedPlayingChannel.name[lang] || selectedPlayingChannel.name.en}
+                              className="w-full h-full border-none bg-black"
+                              allow="autoplay; encrypted-media; fullscreen"
+                              sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"
+                            />
+                          );
+                        }
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* 1. TOP LIVE PLAYER HERO (When a channel is selected) */}
+                {selectedPlayingChannel && (
+                  <div 
+                    ref={channelPlayerRef}
+                    className={`rounded-3xl border overflow-hidden transition-all duration-500 shadow-xl ${
+                      theme === "black" 
+                        ? "border-cyan-500/30 bg-gradient-to-b from-zinc-900/90 to-black shadow-cyan-950/20" 
+                        : "border-cyan-200 bg-gradient-to-b from-white to-slate-50 shadow-cyan-100/50"
+                    }`}
+                  >
+                    {/* Player Top Navigation & Channel Meta */}
+                    <div className={`p-4 md:p-5 flex items-center justify-between gap-4 border-b ${
+                      theme === "black" ? "border-zinc-800 bg-zinc-950/80" : "border-zinc-200 bg-white"
+                    }`}>
+                      <div className="flex items-center gap-3.5">
+                        <div className={`w-10 h-10 md:w-12 md:h-12 rounded-2xl border flex items-center justify-center relative overflow-hidden shrink-0 ${
+                          selectedPlayingChannel.logo ? "p-0" : "p-1.5"
+                        } ${
+                          theme === "black" ? "bg-zinc-900 border-zinc-700" : "bg-white border-zinc-200 shadow-sm"
+                        }`}>
+                          {selectedPlayingChannel.logo ? (
+                            <img
+                              src={selectedPlayingChannel.logo}
+                              alt={selectedPlayingChannel.name[lang] || selectedPlayingChannel.name.en}
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                          ) : (
+                            <Tv className="w-5 h-5 text-cyan-500" />
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-lg md:text-xl font-black">
+                              {selectedPlayingChannel.name[lang] || selectedPlayingChannel.name.en}
+                            </h3>
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-600 text-white flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                              LIVE
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md text-[9px] font-extrabold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                              {selectedPlayingChannel.quality || "FHD"}
+                            </span>
+                          </div>
+                          {selectedPlayingChannel.currentProgram && (
+                            <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1.5">
+                              <Radio className="w-3 h-3 text-red-500 shrink-0" />
+                              <span>{selectedPlayingChannel.currentProgram[lang] || selectedPlayingChannel.currentProgram.en}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Server Switcher Controls */}
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        {selectedPlayingChannel.streams && selectedPlayingChannel.streams.length > 0 && (
+                          <div className={`flex items-center gap-1 p-1 rounded-2xl border ${
+                            theme === "black" ? "bg-zinc-900 border-zinc-800" : "bg-zinc-100 border-zinc-200"
+                          }`}>
+                            <span className="text-[10px] font-black text-zinc-400 px-2 hidden sm:inline">
+                              {lang === "ar" ? "السيرفرات:" : "Servers:"}
+                            </span>
+                            {selectedPlayingChannel.streams.map((st, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => setChannelServerIndex(idx)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1 ${
+                                  channelServerIndex === idx
+                                    ? "bg-cyan-500 text-black shadow-md shadow-cyan-500/20"
+                                    : theme === "black"
+                                      ? "text-zinc-400 hover:text-white hover:bg-zinc-800"
+                                      : "text-zinc-600 hover:text-black hover:bg-white"
+                                }`}
+                              >
+                                <Radio className={`w-3 h-3 ${channelServerIndex === idx ? "animate-pulse text-black" : "text-zinc-500"}`} />
+                                <span>{st.name[lang] || st.name.en || `${t.server} ${idx + 1}`}</span>
+                                {st.quality && (
+                                  <span className={`text-[9px] px-1 rounded font-mono ${channelServerIndex === idx ? "bg-black/20 text-black font-black" : "text-zinc-500"}`}>
+                                    {st.quality}
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Close Player Button */}
+                        <button
+                          onClick={() => setSelectedPlayingChannel(null)}
+                          className="p-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition cursor-pointer"
+                          title={lang === "ar" ? "إغلاق المشغل" : "Close Player"}
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Live Stream Screen */}
+                    <div className="relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden">
+                      {(() => {
+                        const currentStream = selectedPlayingChannel.streams?.[channelServerIndex] || selectedPlayingChannel.streams?.[0];
+                        const streamUrl = currentStream?.url || "";
+                        const streamType = currentStream?.type || "hls";
+
+                        if (!streamUrl) {
+                          return (
+                            <div className="text-center p-8 text-zinc-500">
+                              <Tv className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                              <p className="text-xs">{lang === "ar" ? "لا يتوفر رابط بث مباشر لهذا السيرفر" : "No stream URL available for this server"}</p>
+                            </div>
+                          );
+                        }
+
+                        if (isStreamVideoOrHls(streamUrl, streamType)) {
+                          return (
+                            <HlsVideoPlayer
+                              key={`${selectedPlayingChannel.id}-${channelServerIndex}`}
+                              src={streamUrl}
+                              className="w-full h-full object-contain"
+                              lang={lang}
+                            />
+                          );
+                        } else {
+                          return (
+                            <iframe
+                              key={`${selectedPlayingChannel.id}-${channelServerIndex}`}
+                              id="channel-inline-iframe"
+                              src={streamUrl}
+                              title={selectedPlayingChannel.name[lang] || selectedPlayingChannel.name.en}
+                              className="w-full h-full border-none bg-black"
+                              allow="autoplay; encrypted-media; fullscreen"
+                              sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"
+                            />
+                          );
+                        }
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. SEARCH & CATEGORIES NAVIGATION BAR */}
+                <div className={`p-4 md:p-6 rounded-3xl border transition-all duration-300 ${
+                  theme === "black" ? "bg-zinc-950/80 border-zinc-900" : "bg-white border-zinc-200 shadow-sm"
+                }`}>
+                  <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                    {/* Search Field */}
+                    <div className="relative flex-1">
+                      <Search className={`w-4 h-4 absolute ${lang === 'ar' ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 text-zinc-400`} />
+                      <input
+                        type="text"
+                        placeholder={t.searchChannels}
+                        value={channelsSearch}
+                        onChange={(e) => setChannelsSearch(e.target.value)}
+                        className={`w-full text-xs font-medium rounded-2xl py-3 ${
+                          lang === 'ar' ? 'pr-10 pl-10' : 'pl-10 pr-10'
+                        } border transition-all outline-none ${
+                          theme === "black"
+                            ? "bg-zinc-900/90 border-zinc-800 focus:border-cyan-500 text-white placeholder-zinc-500"
+                            : "bg-zinc-50 border-zinc-200 focus:border-cyan-600 text-zinc-900 placeholder-zinc-400"
+                        }`}
+                      />
+                      {channelsSearch && (
+                        <button
+                          onClick={() => setChannelsSearch("")}
+                          className={`absolute ${lang === 'ar' ? 'left-3' : 'right-3'} top-1/2 -translate-y-1/2 p-1 rounded-full text-zinc-400 hover:text-white cursor-pointer`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Channels Count Badge */}
+                    <div className={`px-4 py-2 rounded-2xl text-xs font-bold shrink-0 flex items-center gap-2 border ${
+                      theme === "black" ? "bg-zinc-900/60 border-zinc-800 text-zinc-300" : "bg-zinc-100 border-zinc-200 text-zinc-700"
+                    }`}>
+                      <Tv className="w-4 h-4 text-cyan-500" />
+                      <span>{filteredChannels.length} {lang === "ar" ? "قناة متوفرة" : "channels available"}</span>
+                    </div>
+                  </div>
+
+                  {/* Category Pills Bar */}
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-4 scrollbar-none">
+                    {channelCategories.map((cat) => {
+                      const isActive = selectedChannelCategory === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          onClick={() => setSelectedChannelCategory(cat.id)}
+                          className={`px-4 py-2 rounded-xl text-xs font-black shrink-0 transition-all duration-300 cursor-pointer ${
+                            isActive
+                              ? theme === "black"
+                                ? "bg-cyan-500 text-black shadow-md shadow-cyan-500/20"
+                                : "bg-cyan-600 text-white shadow-md shadow-cyan-600/20"
+                              : theme === "black"
+                                ? "bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-zinc-850"
+                                : "bg-zinc-100 hover:bg-zinc-200 text-zinc-600 hover:text-zinc-900 border border-zinc-200"
+                          }`}
+                        >
+                          {cat.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. CHANNELS GRID LIST */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                  {filteredChannels.length > 0 ? (
+                    filteredChannels.map((channel) => {
+                      const isPlaying = selectedPlayingChannel?.id === channel.id;
+                      const channelName = channel.name[lang] || channel.name.en;
+                      const categoryName = channel.categoryName[lang] || channel.categoryName.en;
+                      const countryName = channel.country ? (channel.country[lang] || channel.country.en) : "";
+                      const currentProg = channel.currentProgram ? (channel.currentProgram[lang] || channel.currentProgram.en) : "";
+
+                      return (
+                        <div
+                          key={channel.id}
+                          id={`channel-card-${channel.id}`}
+                          className={`group rounded-3xl border transition-all duration-300 p-5 flex flex-col justify-between relative overflow-hidden ${
+                            isPlaying
+                              ? theme === "black"
+                                ? "bg-gradient-to-b from-zinc-900 to-black border-cyan-500 shadow-xl shadow-cyan-500/10 ring-1 ring-cyan-500/40"
+                                : "bg-white border-cyan-500 shadow-lg ring-1 ring-cyan-500/40"
+                              : theme === "black"
+                                ? "bg-zinc-950/70 border-zinc-900 hover:border-zinc-700 hover:shadow-lg hover:shadow-cyan-950/10"
+                                : "bg-white border-zinc-200 hover:border-zinc-300 hover:shadow-md"
+                          }`}
+                        >
+                          {/* Top Header inside Card */}
+                          <div>
+                            <div className="flex items-start justify-between gap-3 mb-4">
+                              {/* Channel Logo */}
+                              <div className={`w-14 h-14 rounded-2xl border flex items-center justify-center relative overflow-hidden shrink-0 transition-transform duration-300 group-hover:scale-105 ${
+                                channel.logo ? "p-0" : "p-2"
+                              } ${
+                                isPlaying
+                                  ? theme === "black" ? "bg-zinc-900 border-cyan-500/50 shadow-md shadow-cyan-500/10" : "bg-white border-cyan-500 shadow-sm"
+                                  : theme === "black" ? "bg-zinc-900 border-zinc-800" : "bg-zinc-50 border-zinc-200 shadow-sm"
+                              }`}>
+                                {channel.logo ? (
+                                  <img
+                                    src={channel.logo}
+                                    alt={channelName}
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                  />
+                                ) : (
+                                  <Tv className="w-6 h-6 text-cyan-500" />
+                                )}
+                              </div>
+
+                              {/* Badges */}
+                              <div className="flex flex-col items-end gap-1.5">
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-600 text-white flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                  LIVE
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase border ${
+                                  theme === "black" ? "bg-zinc-900 border-zinc-800 text-zinc-400" : "bg-zinc-100 border-zinc-200 text-zinc-600"
+                                }`}>
+                                  {channel.quality || "FHD"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Channel Details */}
+                            <div className="mb-4">
+                              <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold ${
+                                  theme === "black" ? "bg-cyan-500/10 text-cyan-400" : "bg-cyan-50 text-cyan-700"
+                                }`}>
+                                  {categoryName}
+                                </span>
+                                {countryName && (
+                                  <span className={`text-[10px] font-medium ${theme === 'black' ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                                    • {countryName}
+                                  </span>
+                                )}
+                              </div>
+
+                              <h4 className="text-base font-black truncate group-hover:text-cyan-400 transition-colors">
+                                {channelName}
+                              </h4>
+
+                              {currentProg && (
+                                <p className={`text-xs mt-1.5 line-clamp-1 font-medium flex items-center gap-1 ${
+                                  theme === 'black' ? 'text-zinc-400' : 'text-zinc-600'
+                                }`}>
+                                  <Radio className="w-2.5 h-2.5 text-red-500 shrink-0" />
+                                  <span className="truncate">{currentProg}</span>
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Server Selection Pills if multiple streams exist */}
+                          {channel.streams && channel.streams.length > 1 && (
+                            <div className="pt-2.5 pb-1 flex flex-wrap items-center gap-1.5 border-t border-dashed border-zinc-800/60">
+                              <span className={`text-[10px] font-black ${theme === 'black' ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                                {lang === "ar" ? "السيرفر:" : "Server:"}
+                              </span>
+                              {channel.streams.map((st, sIdx) => {
+                                const isThisServerActive = isPlaying && channelServerIndex === sIdx;
+                                return (
+                                  <button
+                                    key={sIdx}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handlePlayChannel(channel, sIdx);
+                                    }}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer flex items-center gap-1 ${
+                                      isThisServerActive
+                                        ? "bg-cyan-500 text-black shadow-sm font-black"
+                                        : theme === "black"
+                                          ? "bg-zinc-900/90 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-800"
+                                          : "bg-zinc-100 text-zinc-600 hover:text-black hover:bg-zinc-200 border border-zinc-200"
+                                    }`}
+                                    title={st.name[lang] || st.name.en || `Server ${sIdx + 1}`}
+                                  >
+                                    <span className={`w-1.5 h-1.5 rounded-full ${isThisServerActive ? "bg-black animate-pulse" : "bg-zinc-500"}`} />
+                                    <span>{st.name[lang] || st.name.en || `${sIdx + 1}`}</span>
+                                    {st.quality && (
+                                      <span className="text-[9px] opacity-70">({st.quality})</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Footer Actions inside Card */}
+                          <div className="pt-3 border-t border-dashed flex items-center justify-between gap-2 border-zinc-800/60">
+                            <span className={`text-[10px] font-bold ${theme === 'black' ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                              {channel.streams?.length || 1} {lang === "ar" ? "سيرفرات بث" : "streams"}
+                            </span>
+
+                            <button
+                              id={`play-channel-${channel.id}`}
+                              onClick={() => handlePlayChannel(channel, isPlaying ? channelServerIndex : 0)}
+                              className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all duration-300 cursor-pointer ${
+                                isPlaying
+                                  ? "bg-cyan-500 text-black shadow-md shadow-cyan-500/20"
+                                  : theme === "black"
+                                    ? "bg-zinc-900 hover:bg-cyan-500 hover:text-black text-white border border-zinc-800 hover:border-cyan-500"
+                                    : "bg-zinc-900 hover:bg-cyan-600 text-white shadow-sm"
+                              }`}
+                            >
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                              <span>{isPlaying ? (lang === "ar" ? "قيد التشغيل" : "Playing") : t.watchChannel}</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="col-span-full text-center py-16">
+                      <Tv className="w-12 h-12 mx-auto text-zinc-600 mb-3 stroke-1" />
+                      <p className={`text-sm ${theme === 'black' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                        {t.noChannelsFound}
+                      </p>
+                      {channelsSearch && (
+                        <button
+                          onClick={() => {
+                            setChannelsSearch("");
+                            setSelectedChannelCategory("all");
+                          }}
+                          className="mt-3 px-4 py-1.5 rounded-xl text-xs font-bold bg-cyan-500 text-black cursor-pointer"
+                        >
+                          {lang === "ar" ? "إلغاء البحث" : "Clear Search"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </motion.div>
+        )}
 
           </AnimatePresence>
         </div>
@@ -2171,17 +4104,108 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Non-editable Status Banner */}
-                        <div className={`flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl ${theme === 'black' ? 'bg-zinc-900/30 border border-zinc-900' : 'bg-zinc-50 border border-zinc-200'}`}>
-                          <div className="flex items-center gap-3">
-                            <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse shrink-0" />
-                            <div className="text-xs">
-                              <span className={`font-bold block ${theme === 'black' ? 'text-zinc-400' : 'text-zinc-700'}`}>
-                                {lang === "ar" ? "البث المباشر نشط الآن" : "Live Stream is Active"}
-                              </span>
-                              <span className={`text-[10px] block ${theme === 'black' ? 'text-zinc-500' : 'text-zinc-450'}`}>
-                                {lang === "ar" ? "مشاهدة ممتعة للمباراة!" : "Enjoy watching the game!"}
-                              </span>
+                        {/* Promotional VIP Showcase Inside Match Stream Modal (Directly below servers) */}
+                        <div className={`p-4 sm:p-5 rounded-2xl border ${
+                          theme === "black" 
+                            ? "bg-zinc-900/40 border-zinc-850 text-white" 
+                            : "bg-zinc-50 border-zinc-200 text-zinc-900"
+                        } space-y-4`}>
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-start">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-500">
+                                <Crown className="w-4 h-4" />
+                              </div>
+                              <h5 className="text-xs font-black">
+                                {lang === "ar" ? "مميزات باقة VIP الحصرية للموقع" : "Exclusive VIP Portal Features"}
+                              </h5>
+                            </div>
+                            <span className="text-[10px] font-bold text-amber-500">
+                              {lang === "ar" ? "شاهد بدون تقطيع وبدقة 4K" : "Watch without lag in 4K UHD"}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                            {/* 1. جميع القنوات حول العالم */}
+                            <div className={`p-3.5 rounded-xl border ${theme === 'black' ? 'bg-zinc-950/60 border-zinc-800 hover:border-cyan-500/40' : 'bg-white border-zinc-200 shadow-sm hover:border-cyan-400'} transition-all`}>
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-lg">🌐</span>
+                                <h6 className="text-xs sm:text-sm font-black text-cyan-500">{lang === "ar" ? "1. جميع القنوات حول العالم" : "1. Worldwide Channels"}</h6>
+                              </div>
+                              <p className={`text-[11px] sm:text-xs leading-relaxed ${theme === 'black' ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                                {lang === "ar" ? "آلاف القنوات الرياضية، الإخبارية، الترفيهية، والأفلام المشفرة من كافة دول العالم مع تغطية عالمية." : "Thousands of sports, news, and cinema channels globally."}
+                              </p>
+                            </div>
+
+                            {/* 2. خدمة سلسة وسريعة */}
+                            <div className={`p-3.5 rounded-xl border ${theme === 'black' ? 'bg-zinc-950/60 border-zinc-800 hover:border-amber-500/40' : 'bg-white border-zinc-200 shadow-sm hover:border-amber-400'} transition-all`}>
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-lg">⚡</span>
+                                <h6 className="text-xs sm:text-sm font-black text-amber-500">{lang === "ar" ? "2. خدمة سلسة وسريعة" : "2. Fast & Smooth"}</h6>
+                              </div>
+                              <p className={`text-[11px] sm:text-xs leading-relaxed ${theme === 'black' ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                                {lang === "ar" ? "سيرفرات بث متعددة فائقة السرعة مع تنقل فوري بدون أي تقطيع أو تأخير أثناء الضغط العالي." : "Ultra-fast servers with zero lag under high peak traffic."}
+                              </p>
+                            </div>
+
+                            {/* 3. دقة 4K فائقة الوضوح */}
+                            <div className={`p-3.5 rounded-xl border ${theme === 'black' ? 'bg-zinc-950/60 border-zinc-800 hover:border-emerald-500/40' : 'bg-white border-zinc-200 shadow-sm hover:border-emerald-400'} transition-all`}>
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-lg">✨</span>
+                                <h6 className="text-xs sm:text-sm font-black text-emerald-500">{lang === "ar" ? "3. دقة 4K فائقة الوضوح" : "3. 4K Ultra HD"}</h6>
+                              </div>
+                              <p className={`text-[11px] sm:text-xs leading-relaxed ${theme === 'black' ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                                {lang === "ar" ? "جودة بث استثنائية 4K UHD و FHD مع صوت نقي وتوافق كامل مع الشاشات الذكية والجوالات." : "Crystal clear 4K UHD with Smart TV & mobile support."}
+                              </p>
+                            </div>
+
+                            {/* 4. إزالة الإعلانات بالكامل */}
+                            <div className={`p-3.5 rounded-xl border ${theme === 'black' ? 'bg-zinc-950/60 border-zinc-800 hover:border-purple-500/40' : 'bg-white border-zinc-200 shadow-sm hover:border-purple-400'} transition-all`}>
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-lg">🛡️</span>
+                                <h6 className="text-xs sm:text-sm font-black text-purple-500">{lang === "ar" ? "4. إزالة الإعلانات بالكامل" : "4. 100% Ad-Free"}</h6>
+                              </div>
+                              <p className={`text-[11px] sm:text-xs leading-relaxed ${theme === 'black' ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                                {lang === "ar" ? "تجربة مشاهدة وتصفح نقية 100% بدون أي إعلانات مزعجة أو نوافذ منبثقة." : "100% ad-free viewing without any annoying popup ads."}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* CTA Row */}
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+                            <span className={`text-[11px] font-bold ${theme === 'black' ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                              {lang === "ar" ? "اشترك الآن أو اطلب تجربة مجانية لاختبار السيرفرات:" : "Subscribe now or request a free trial to test servers:"}
+                            </span>
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                              <a
+                                href={
+                                  subscriptionSettings.supportContact?.includes("wa.me")
+                                    ? `${subscriptionSettings.supportContact}?text=${encodeURIComponent(lang === "ar" ? "مرحباً، أود طلب تجربة مجانية لمشاهدة المباريات والبث" : "Hello, I would like to request a Free Trial for Live Matches")}`
+                                    : subscriptionSettings.supportContact || "https://wa.me/966500000000"
+                                }
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1 border cursor-pointer ${
+                                  theme === "black"
+                                    ? "bg-zinc-800 hover:bg-zinc-750 text-zinc-200 border-zinc-700"
+                                    : "bg-white hover:bg-zinc-100 text-zinc-800 border-zinc-300 shadow-sm"
+                                }`}
+                              >
+                                <Sparkles className="w-3 h-3 text-amber-500" />
+                                <span>{lang === "ar" ? "تجربة مجانية" : "Free Trial"}</span>
+                              </a>
+                              <a
+                                href={
+                                  subscriptionSettings.supportContact?.includes("wa.me")
+                                    ? `${subscriptionSettings.supportContact}?text=${encodeURIComponent(lang === "ar" ? "مرحباً، أريد الاشتراك في باقة VIP للبث المباشر" : "Hello, I want to subscribe to the VIP Live Stream Plan")}`
+                                    : subscriptionSettings.supportContact || "https://wa.me/966500000000"
+                                }
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1 sm:flex-initial px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black text-xs font-black transition flex items-center justify-center gap-1 shadow-md shadow-amber-500/20 cursor-pointer"
+                              >
+                                <Crown className="w-3 h-3" />
+                                <span>{lang === "ar" ? "اشترك الآن" : "Subscribe Now"}</span>
+                              </a>
                             </div>
                           </div>
                         </div>
@@ -2241,14 +4265,6 @@ export default function App() {
                             </p>
                           </div>
                         </div>
-
-                        {/* View as User Toggle helper */}
-                        <button
-                          onClick={() => setUserRole("viewer")}
-                          className={`px-3 py-1.5 rounded-lg ${theme === 'black' ? 'bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-zinc-200 border-zinc-850' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600 hover:text-zinc-800 border-zinc-200'} text-[10px] font-bold transition-all self-end sm:self-auto`}
-                        >
-                          {lang === "ar" ? "معاينة كـ مشاهد 👁️" : "View as Viewer 👁️"}
-                        </button>
                       </div>
 
                       {/* Video Player Preview (if streamUrl is set) */}
@@ -2982,18 +4998,54 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Tabs Switcher: Controls vs Analytics Dashboard */}
-                <div className="flex p-1 bg-zinc-900 rounded-xl border border-zinc-800">
+                {/* Tabs Switcher: Controls vs Channels vs Subscriptions vs Analytics vs Backup */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 p-1 bg-zinc-900 rounded-xl border border-zinc-800 gap-1">
                   <button
                     onClick={() => setAdminModalTab("controls")}
-                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
                       adminModalTab === "controls"
                         ? "bg-amber-500 text-black shadow-md font-black"
                         : "text-zinc-400 hover:text-white"
                     }`}
                   >
                     <Sliders className="w-3.5 h-3.5" />
-                    <span>{lang === "ar" ? "إدارة البوابة والمباريات" : "Portal Controls"}</span>
+                    <span>{lang === "ar" ? "المباريات والبوابة" : "Matches"}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setAdminModalTab("channels");
+                    }}
+                    className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      adminModalTab === "channels"
+                        ? "bg-cyan-500 text-black shadow-md font-black"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    <Tv className="w-3.5 h-3.5" />
+                    <span>{lang === "ar" ? "إدارة القنوات" : "Channels"}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/40 font-mono font-bold">
+                      {customChannels.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setAdminModalTab("subscriptions");
+                      fetchSubscriptionCodes();
+                      fetchSubscriptionSettings();
+                    }}
+                    className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
+                      adminModalTab === "subscriptions"
+                        ? "bg-amber-500 text-black shadow-md font-black"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>{lang === "ar" ? "أكواد الاشتراكات" : "Subscriptions"}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/40 font-mono font-bold">
+                      {adminSubscriptionCodes.length}
+                    </span>
                   </button>
 
                   <button
@@ -3001,15 +5053,31 @@ export default function App() {
                       setAdminModalTab("analytics");
                       fetchAnalyticsData();
                     }}
-                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-2 cursor-pointer relative ${
+                    className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
                       adminModalTab === "analytics"
                         ? "bg-emerald-500 text-black shadow-md font-black"
                         : "text-zinc-400 hover:text-white"
                     }`}
                   >
                     <BarChart3 className="w-3.5 h-3.5" />
-                    <span>{lang === "ar" ? "داشبورد الإحصائيات والزوار" : "Analytics Dashboard"}</span>
+                    <span>{lang === "ar" ? "الإحصائيات" : "Analytics"}</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setAdminModalTab("backup");
+                      fetchLiveBackupData();
+                    }}
+                    className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
+                      adminModalTab === "backup"
+                        ? "bg-purple-500 text-black shadow-md font-black"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    <HardDrive className="w-3.5 h-3.5" />
+                    <span>{lang === "ar" ? "النسخ الاحتياطي" : "Backup"}</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
                   </button>
                 </div>
               </div>
@@ -3377,6 +5445,1379 @@ export default function App() {
                           })}
                         </div>
                       </div>
+                    </div>
+                  </div>
+                ) : adminModalTab === "channels" ? (
+                  /* CHANNELS MANAGEMENT VIEW */
+                  <div className="space-y-6">
+                    {/* Success/Error Message */}
+                    {adminMessage && (
+                      <div className={`p-3 rounded-xl text-xs font-bold border ${
+                        adminMessage.type === "success"
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : "bg-red-500/10 text-red-400 border-red-500/20"
+                      }`}>
+                        {adminMessage.text}
+                      </div>
+                    )}
+
+                    {isCreatingChannel || adminEditingChannel ? (
+                      /* CHANNEL CREATE / EDIT FORM */
+                      <div className="p-4 rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/5 via-zinc-900/90 to-zinc-950 space-y-5 shadow-lg">
+                        <div className="flex items-center justify-between gap-3 pb-3 border-b border-zinc-800">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+                              <Tv className="w-4.5 h-4.5" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-black text-cyan-400 uppercase tracking-wider">
+                                {adminEditingChannel 
+                                  ? (lang === "ar" ? `تعديل القناة: ${channelFormData.nameAr || channelFormData.nameEn}` : `Edit Channel: ${channelFormData.nameEn || channelFormData.nameAr}`)
+                                  : (lang === "ar" ? "إضافة قناة تلفزيونية جديدة" : "Add New TV Channel")
+                                }
+                              </h4>
+                              <p className="text-[10px] text-zinc-400">
+                                {lang === "ar" ? "أدخل بيانات القناة وشعارها وسيرفرات البث المباشر" : "Enter channel details, logo, and streaming servers"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => resetChannelForm()}
+                            className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>{lang === "ar" ? "إلغاء والعودة" : "Cancel"}</span>
+                          </button>
+                        </div>
+
+                        {/* Channel Names (AR & EN) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-extrabold text-zinc-300 uppercase tracking-wider block mb-1">
+                              {lang === "ar" ? "اسم القناة (بالعربية) *" : "Channel Name (Arabic) *"}
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="مثال: بي إن سبورت 1 HD"
+                              value={channelFormData.nameAr}
+                              onChange={(e) => setChannelFormData({ ...channelFormData, nameAr: e.target.value })}
+                              className="w-full text-xs font-medium rounded-xl p-2.5 bg-zinc-900 border border-zinc-800 focus:border-cyan-500 text-white placeholder-zinc-500 outline-none transition"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-extrabold text-zinc-300 uppercase tracking-wider block mb-1">
+                              {lang === "ar" ? "اسم القناة (بالإنجليزية)" : "Channel Name (English)"}
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. beIN Sports 1 HD"
+                              value={channelFormData.nameEn}
+                              onChange={(e) => setChannelFormData({ ...channelFormData, nameEn: e.target.value })}
+                              className="w-full text-xs font-medium rounded-xl p-2.5 bg-zinc-900 border border-zinc-800 focus:border-cyan-500 text-white placeholder-zinc-500 outline-none transition"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Category & Quality */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-extrabold text-zinc-300 uppercase tracking-wider block mb-1">
+                              {lang === "ar" ? "تصنيف القناة" : "Channel Category"}
+                            </label>
+                            <select
+                              value={channelFormData.category}
+                              onChange={(e) => {
+                                const cat = e.target.value as any;
+                                const catMap: Record<string, { ar: string; en: string }> = {
+                                  sports: { ar: "رياضية", en: "Sports" },
+                                  cinema: { ar: "أفلام وسينما", en: "Movies & Cinema" },
+                                  news: { ar: "إخبارية", en: "News" },
+                                  general: { ar: "منوعة وترفيه", en: "Entertainment & TV" },
+                                  documentary: { ar: "وثائقية", en: "Documentary" },
+                                  kids: { ar: "أطفال", en: "Kids" },
+                                };
+                                const mapped = catMap[cat] || { ar: "عامة", en: "General" };
+                                setChannelFormData({
+                                  ...channelFormData,
+                                  category: cat,
+                                  categoryNameAr: mapped.ar,
+                                  categoryNameEn: mapped.en
+                                });
+                              }}
+                              className="w-full text-xs font-bold rounded-xl p-2.5 bg-zinc-900 border border-zinc-800 focus:border-cyan-500 text-white outline-none transition cursor-pointer"
+                            >
+                              <option value="sports">{lang === "ar" ? "⚽ قنوات رياضية" : "⚽ Sports"}</option>
+                              <option value="cinema">{lang === "ar" ? "🎬 أفلام وسينما" : "🎬 Cinema & Movies"}</option>
+                              <option value="news">{lang === "ar" ? "📰 قنوات إخبارية" : "📰 News"}</option>
+                              <option value="general">{lang === "ar" ? "📺 قنوات منوعة وترفيه" : "📺 General & Entertainment"}</option>
+                              <option value="documentary">{lang === "ar" ? "🌍 قنوات وثائقية" : "🌍 Documentary"}</option>
+                              <option value="kids">{lang === "ar" ? "🎨 قنوات أطفال" : "🎨 Kids"}</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-extrabold text-zinc-300 uppercase tracking-wider block mb-1">
+                              {lang === "ar" ? "جودة البث الافتراضية" : "Default Quality"}
+                            </label>
+                            <select
+                              value={channelFormData.quality}
+                              onChange={(e) => setChannelFormData({ ...channelFormData, quality: e.target.value as any })}
+                              className="w-full text-xs font-bold rounded-xl p-2.5 bg-zinc-900 border border-zinc-800 focus:border-cyan-500 text-white outline-none transition cursor-pointer"
+                            >
+                              <option value="4K">4K Ultra HD</option>
+                              <option value="FHD">Full HD (1080p)</option>
+                              <option value="HD">HD (720p)</option>
+                              <option value="SD">SD (480p)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Country / Region */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-extrabold text-zinc-300 uppercase tracking-wider block mb-1">
+                              {lang === "ar" ? "دولة / منطقة القناة (بالعربية)" : "Country/Region (Arabic)"}
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="مثال: قطر / الشرق الأوسط"
+                              value={channelFormData.countryAr}
+                              onChange={(e) => setChannelFormData({ ...channelFormData, countryAr: e.target.value })}
+                              className="w-full text-xs font-medium rounded-xl p-2.5 bg-zinc-900 border border-zinc-800 focus:border-cyan-500 text-white placeholder-zinc-500 outline-none transition"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-extrabold text-zinc-300 uppercase tracking-wider block mb-1">
+                              {lang === "ar" ? "دولة القناة (بالإنجليزية)" : "Country/Region (English)"}
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Qatar / MENA"
+                              value={channelFormData.countryEn}
+                              onChange={(e) => setChannelFormData({ ...channelFormData, countryEn: e.target.value })}
+                              className="w-full text-xs font-medium rounded-xl p-2.5 bg-zinc-900 border border-zinc-800 focus:border-cyan-500 text-white placeholder-zinc-500 outline-none transition"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Channel Logo Section */}
+                        <div className="p-3.5 rounded-xl border border-zinc-800 bg-zinc-900/60 space-y-3">
+                          <label className="text-[10px] font-extrabold text-zinc-300 uppercase tracking-wider block">
+                            {lang === "ar" ? "شعار القناة (Logo)" : "Channel Logo"}
+                          </label>
+
+                          <div className="flex items-center gap-3">
+                            <div className="w-14 h-14 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center overflow-hidden shrink-0">
+                              {channelFormData.logo ? (
+                                <img
+                                  src={channelFormData.logo}
+                                  alt="Channel Logo"
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                  onError={(e) => {
+                                    (e.target as HTMLElement).style.display = "none";
+                                  }}
+                                />
+                              ) : (
+                                <Tv className="w-6 h-6 text-zinc-600" />
+                              )}
+                            </div>
+
+                            <div className="flex-1 space-y-2">
+                              {/* Direct URL input */}
+                              <input
+                                type="text"
+                                placeholder={lang === "ar" ? "رابط صورة الشعار (URL)..." : "Logo Image URL..."}
+                                value={channelFormData.logo}
+                                onChange={(e) => setChannelFormData({ ...channelFormData, logo: e.target.value })}
+                                className="w-full text-xs font-medium rounded-xl p-2 bg-zinc-900 border border-zinc-800 focus:border-cyan-500 text-white placeholder-zinc-500 outline-none transition"
+                              />
+
+                              {/* Upload from device */}
+                              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-bold cursor-pointer transition">
+                                <Upload className="w-3.5 h-3.5 text-cyan-400" />
+                                <span>{lang === "ar" ? "رفع الشعار من جهازك" : "Upload logo from device"}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      const reader = new FileReader();
+                                      reader.onload = (ev) => {
+                                        const result = ev.target?.result as string;
+                                        if (result) {
+                                          setChannelFormData({ ...channelFormData, logo: result });
+                                        }
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Current Program (Optional) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-extrabold text-zinc-300 uppercase tracking-wider block mb-1">
+                              {lang === "ar" ? "البرنامج أو الحدث المذاع حالياً (اختياري)" : "Currently Airing Show (Optional)"}
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="مثال: استوديو دوري أبطال أوروبا"
+                              value={channelFormData.currentProgramAr}
+                              onChange={(e) => setChannelFormData({ ...channelFormData, currentProgramAr: e.target.value })}
+                              className="w-full text-xs font-medium rounded-xl p-2.5 bg-zinc-900 border border-zinc-800 focus:border-cyan-500 text-white placeholder-zinc-500 outline-none transition"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-extrabold text-zinc-300 uppercase tracking-wider block mb-1">
+                              {lang === "ar" ? "البرنامج الحالي (بالإنجليزية)" : "Current Show (English)"}
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Champions League Studio"
+                              value={channelFormData.currentProgramEn}
+                              onChange={(e) => setChannelFormData({ ...channelFormData, currentProgramEn: e.target.value })}
+                              className="w-full text-xs font-medium rounded-xl p-2.5 bg-zinc-900 border border-zinc-800 focus:border-cyan-500 text-white placeholder-zinc-500 outline-none transition"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Streaming Servers List */}
+                        <div className="space-y-3 pt-2 border-t border-zinc-800">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-[11px] font-black text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <Radio className="w-3.5 h-3.5" />
+                                <span>{lang === "ar" ? "سيرفرات وروابط البث المباشر للقناة" : "Channel Live Streaming Servers"}</span>
+                              </label>
+                              <p className="text-[10px] text-zinc-400">
+                                {lang === "ar" ? "يدعم روابط M3U8, MP4, روابط اليوتيوب, أو كود Iframe التضمين" : "Supports M3U8, MP4, YouTube embeds, or Iframe tags"}
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextNum = channelFormData.streams.length + 1;
+                                setChannelFormData({
+                                  ...channelFormData,
+                                  streams: [
+                                    ...channelFormData.streams,
+                                    {
+                                      nameAr: `سيرفر ${nextNum}`,
+                                      nameEn: `Server ${nextNum}`,
+                                      url: "",
+                                      type: "video",
+                                      quality: "1080p"
+                                    }
+                                  ]
+                                });
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/30 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>{lang === "ar" ? "إضافة سيرفر" : "Add Server"}</span>
+                            </button>
+                          </div>
+
+                          <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                            {channelFormData.streams.map((stream, idx) => (
+                              <div key={idx} className="p-3 rounded-xl border border-zinc-800 bg-zinc-900/90 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-black text-zinc-300">
+                                    {lang === "ar" ? `سيرفر البث #${idx + 1}` : `Stream Server #${idx + 1}`}
+                                  </span>
+
+                                  {channelFormData.streams.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = channelFormData.streams.filter((_, i) => i !== idx);
+                                        setChannelFormData({ ...channelFormData, streams: updated });
+                                      }}
+                                      className="p-1 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition cursor-pointer"
+                                      title={lang === "ar" ? "حذف هذا السيرفر" : "Remove server"}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  <div>
+                                    <label className="text-[9px] font-bold text-zinc-400 block mb-0.5">
+                                      {lang === "ar" ? "اسم السيرفر بالعربية" : "Server Name (Arabic)"}
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={stream.nameAr}
+                                      onChange={(e) => {
+                                        const updated = [...channelFormData.streams];
+                                        updated[idx].nameAr = e.target.value;
+                                        setChannelFormData({ ...channelFormData, streams: updated });
+                                      }}
+                                      className="w-full text-xs font-medium rounded-lg p-2 bg-zinc-950 border border-zinc-800 focus:border-cyan-500 text-white outline-none"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[9px] font-bold text-zinc-400 block mb-0.5">
+                                      {lang === "ar" ? "نوع المشغل" : "Stream Type"}
+                                    </label>
+                                    <select
+                                      value={stream.type}
+                                      onChange={(e) => {
+                                        const updated = [...channelFormData.streams];
+                                        updated[idx].type = e.target.value as any;
+                                        setChannelFormData({ ...channelFormData, streams: updated });
+                                      }}
+                                      className="w-full text-xs font-bold rounded-lg p-2 bg-zinc-950 border border-zinc-800 focus:border-cyan-500 text-white outline-none cursor-pointer"
+                                    >
+                                      <option value="video">{lang === "ar" ? "🎬 فيديو HLS / MP4" : "🎬 Video (HLS/MP4)"}</option>
+                                      <option value="iframe">{lang === "ar" ? "🌐 تضمين Iframe / صفحة" : "🌐 Iframe Embed"}</option>
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[9px] font-bold text-zinc-400 block mb-0.5">
+                                      {lang === "ar" ? "الجودة" : "Quality"}
+                                    </label>
+                                    <select
+                                      value={stream.quality}
+                                      onChange={(e) => {
+                                        const updated = [...channelFormData.streams];
+                                        updated[idx].quality = e.target.value;
+                                        setChannelFormData({ ...channelFormData, streams: updated });
+                                      }}
+                                      className="w-full text-xs font-bold rounded-lg p-2 bg-zinc-950 border border-zinc-800 focus:border-cyan-500 text-white outline-none cursor-pointer"
+                                    >
+                                      <option value="4K">4K</option>
+                                      <option value="1080p">1080p (FHD)</option>
+                                      <option value="720p">720p (HD)</option>
+                                      <option value="480p">480p (SD)</option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="text-[9px] font-bold text-zinc-400 block mb-0.5">
+                                    {lang === "ar" ? "رابط البث أو كود التضمين *" : "Stream URL or Embed Code *"}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    placeholder="https://.../stream.m3u8 أو كود <iframe>"
+                                    value={stream.url}
+                                    onChange={(e) => {
+                                      const updated = [...channelFormData.streams];
+                                      updated[idx].url = e.target.value;
+                                      setChannelFormData({ ...channelFormData, streams: updated });
+                                    }}
+                                    className="w-full text-xs font-mono rounded-lg p-2 bg-zinc-950 border border-zinc-800 focus:border-cyan-500 text-cyan-300 placeholder-zinc-600 outline-none"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Save / Submit Channel Button */}
+                        <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-800">
+                          <button
+                            type="button"
+                            onClick={() => resetChannelForm()}
+                            className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold transition cursor-pointer"
+                          >
+                            {lang === "ar" ? "إلغاء" : "Cancel"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSaveChannelForm()}
+                            disabled={isSavingChannels}
+                            className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-black text-xs transition shadow-md shadow-cyan-500/20 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                          >
+                            {isSavingChannels ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Check className="w-4 h-4" />
+                            )}
+                            <span>
+                              {isSavingChannels
+                                ? (lang === "ar" ? "جاري الحفظ..." : "Saving...")
+                                : (lang === "ar" ? "حفظ القناة ونشرها في البوابة" : "Save & Publish Channel")}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* CHANNELS LIST DASHBOARD */
+                      <div className="space-y-4">
+                        {/* Action Top Bar */}
+                        <div className="p-4 rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 via-zinc-900 to-zinc-950 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-md">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <Tv className="w-5 h-5 text-cyan-400" />
+                              <h4 className="text-sm font-black text-white">
+                                {lang === "ar" ? "قائمة جميع القنوات التلفزيونية" : "All TV Channels Management"}
+                              </h4>
+                            </div>
+                            <p className="text-xs text-zinc-400 mt-0.5">
+                              {lang === "ar" 
+                                ? `لديك حالياً ${customChannels.length} قناة مضافة. يمكنك إضافة قنوات جديدة وتعديل الروابط فوراً.`
+                                : `You currently have ${customChannels.length} channels. You can add or modify streams instantly.`}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAddChannel()}
+                            className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-black transition shadow-md shadow-cyan-500/20 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>{lang === "ar" ? "إضافة قناة جديدة +" : "Add New Channel +"}</span>
+                          </button>
+                        </div>
+
+                        {/* Channels Grid / List */}
+                        {customChannels.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[380px] overflow-y-auto pr-1">
+                            {customChannels.map((channel) => {
+                              const channelName = channel.name[lang] || channel.name.en || channel.name.ar;
+                              const catName = channel.categoryName?.[lang] || channel.categoryName?.en || channel.categoryName?.ar || channel.category;
+                              return (
+                                <div
+                                  key={channel.id}
+                                  className="p-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/80 hover:border-cyan-500/40 transition flex items-center justify-between gap-3 group"
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-12 h-12 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center overflow-hidden shrink-0">
+                                      {channel.logo ? (
+                                        <img
+                                          src={channel.logo}
+                                          alt={channelName}
+                                          className="w-full h-full object-cover"
+                                          referrerPolicy="no-referrer"
+                                        />
+                                      ) : (
+                                        <Tv className="w-5 h-5 text-zinc-600" />
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <h5 className="text-xs font-black text-white truncate group-hover:text-cyan-400 transition">
+                                        {channelName}
+                                      </h5>
+                                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300">
+                                          {catName}
+                                        </span>
+                                        <span className="text-[9px] font-mono font-black px-1.5 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                          {channel.quality || "HD"}
+                                        </span>
+                                        <span className="text-[9px] font-bold text-zinc-400">
+                                          {channel.streams?.length || 0} {lang === "ar" ? "سيرفرات" : "servers"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditChannel(channel)}
+                                      className="p-2 rounded-xl bg-zinc-800 hover:bg-cyan-500/20 hover:text-cyan-400 text-zinc-300 transition cursor-pointer"
+                                      title={lang === "ar" ? "تعديل بيانات القناة وسيرفراتها" : "Edit Channel"}
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteChannel(channel.id)}
+                                      className="p-2 rounded-xl bg-zinc-800 hover:bg-red-500/20 hover:text-red-400 text-zinc-400 transition cursor-pointer"
+                                      title={lang === "ar" ? "حذف القناة نهائياً" : "Delete Channel"}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="p-8 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/40 text-center space-y-3">
+                            <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mx-auto">
+                              <Tv className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <h5 className="text-sm font-bold text-white">
+                                {lang === "ar" ? "لا توجد أي قنوات مضافة حالياً" : "No channels added yet"}
+                              </h5>
+                              <p className="text-xs text-zinc-400 max-w-sm mx-auto mt-1">
+                                {lang === "ar" 
+                                  ? "قائمة القنوات فارغة. يمكنك الضغط على الزر أدناه لإضافة قنوات وسيرفرات البث للبوابة."
+                                  : "Your channels list is empty. Click below to add your first channel."}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAddChannel()}
+                              className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-black transition inline-flex items-center gap-2 cursor-pointer shadow-md shadow-cyan-500/20"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span>{lang === "ar" ? "إضافة أول قناة الآن" : "Add First Channel Now"}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : adminModalTab === "subscriptions" ? (
+                  /* SUBSCRIPTION CODES & GATE MANAGEMENT TAB */
+                  <div className="space-y-6">
+                    {/* Master Gate Setting Switch */}
+                    <div className="p-4 sm:p-5 rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-zinc-900 to-zinc-950 shadow-lg space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                            <Lock className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-white flex items-center gap-2">
+                              <span>{lang === "ar" ? "نظام قفل القنوات التلفزيونية واشتراكات VIP" : "VIP TV Channels Subscription Gate"}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                subscriptionSettings?.gateEnabled
+                                  ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                                  : "bg-zinc-800 text-zinc-400"
+                              }`}>
+                                {subscriptionSettings?.gateEnabled
+                                  ? (lang === "ar" ? "القفل مفعل" : "Gate Enabled")
+                                  : (lang === "ar" ? "القفل معطل" : "Gate Disabled")}
+                              </span>
+                            </h4>
+                            <p className="text-xs text-zinc-400 mt-0.5">
+                              {lang === "ar"
+                                ? "عند تفعيل هذا الخيار، سيُطلب من أي زائر إدخال كود تفعيل نشط للوصول إلى قائمة جميع القنوات والبث المباشر."
+                                : "When active, viewers must enter a valid subscription code to view all TV channels & live streams."}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleToggleGate()}
+                          disabled={isSavingGateSetting}
+                          className={`px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer shrink-0 shadow-md ${
+                            subscriptionSettings?.gateEnabled
+                              ? "bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20"
+                              : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700"
+                          }`}
+                        >
+                          {subscriptionSettings?.gateEnabled ? (
+                            <>
+                              <Lock className="w-4 h-4" />
+                              <span>{lang === "ar" ? "تعطيل القفل (مفتوح للجميع)" : "Disable Gate (Public Access)"}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Unlock className="w-4 h-4" />
+                              <span>{lang === "ar" ? "تفعيل القفل (يتطلب كود)" : "Enable Gate (Require Code)"}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* WhatsApp / Support Contact config */}
+                      <div className="pt-3 border-t border-zinc-800 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <label className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider block mb-1">
+                            {lang === "ar" ? "رابط طلب الأكواد / الدعم (واتساب أو تيليجرام):" : "Support / Order Link (WhatsApp):"}
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={supportContactEdit}
+                              onChange={(e) => setSupportContactEdit(e.target.value)}
+                              placeholder="https://wa.me/966500000000"
+                              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white text-xs font-mono focus:outline-none focus:border-amber-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSupportContact()}
+                              className="px-3 py-2 rounded-xl bg-amber-500 text-black font-black text-xs shrink-0 cursor-pointer hover:bg-amber-400 transition"
+                            >
+                              {lang === "ar" ? "حفظ" : "Save"}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider block mb-1">
+                            {lang === "ar" ? "عنوان شاشة التفعيل:" : "Gate Screen Title:"}
+                          </label>
+                          <input
+                            type="text"
+                            value={subscriptionSettings?.title?.[lang] || (lang === "ar" ? "تفعيل اشتراك المباريات VIP" : "VIP Matches Activation")}
+                            readOnly
+                            className="w-full px-3 py-2 bg-zinc-950/60 border border-zinc-800 rounded-xl text-zinc-300 text-xs focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Stats Overview */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 text-center">
+                        <span className="text-xl font-black font-mono text-white block">{adminSubscriptionCodes.length}</span>
+                        <span className="text-[10px] font-extrabold text-zinc-400 uppercase">{lang === "ar" ? "إجمالي الأكواد" : "Total Codes"}</span>
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 text-center">
+                        <span className="text-xl font-black font-mono text-emerald-400 block">
+                          {adminSubscriptionCodes.filter(c => c.status === "active").length}
+                        </span>
+                        <span className="text-[10px] font-extrabold text-zinc-400 uppercase">{lang === "ar" ? "أكواد نشطة" : "Active"}</span>
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 text-center">
+                        <span className="text-xl font-black font-mono text-cyan-400 block">
+                          {adminSubscriptionCodes.filter(c => c.isLifetime || c.planType === "lifetime").length}
+                        </span>
+                        <span className="text-[10px] font-extrabold text-zinc-400 uppercase">{lang === "ar" ? "اشتراكات دائمة" : "Lifetime"}</span>
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 text-center">
+                        <span className="text-xl font-black font-mono text-amber-400 block">
+                          {adminSubscriptionCodes.reduce((sum, c) => sum + (c.timesUsed || (c.usedDevices?.length || 0)), 0)}
+                        </span>
+                        <span className="text-[10px] font-extrabold text-zinc-400 uppercase">{lang === "ar" ? "مرات الاستخدام" : "Times Used"}</span>
+                      </div>
+                    </div>
+
+                    {/* Generate Codes Tool Form */}
+                    <div className="p-4 sm:p-5 rounded-2xl border border-zinc-800 bg-zinc-900/70 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Plus className="w-4 h-4 text-amber-400" />
+                          <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                            {lang === "ar" ? "توليد وإنشاء أكواد اشتراك جديدة" : "Generate New Subscription Codes"}
+                          </h4>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {/* Plan Type */}
+                        <div>
+                          <label className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider block mb-1">
+                            {lang === "ar" ? "باقة الاشتراك:" : "Subscription Plan:"}
+                          </label>
+                          <select
+                            value={codeGenForm.planType}
+                            onChange={(e) => {
+                              const p = e.target.value as any;
+                              let days = 30;
+                              if (p === "24h") days = 1;
+                              if (p === "7d") days = 7;
+                              if (p === "30d") days = 30;
+                              if (p === "90d") days = 90;
+                              if (p === "365d") days = 365;
+                              if (p === "lifetime") days = 9999;
+                              setCodeGenForm({ ...codeGenForm, planType: p, durationDays: days });
+                            }}
+                            className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white text-xs font-bold focus:outline-none focus:border-amber-500"
+                          >
+                            <option value="24h">24 {lang === "ar" ? "ساعة (تجربة)" : "Hours (Trial)"}</option>
+                            <option value="7d">7 {lang === "ar" ? "أيام (أسبوع)" : "Days (1 Week)"}</option>
+                            <option value="30d">30 {lang === "ar" ? "يوم (شهر كامل)" : "Days (1 Month)"}</option>
+                            <option value="90d">90 {lang === "ar" ? "يوم (3 أشهر)" : "Days (3 Months)"}</option>
+                            <option value="365d">365 {lang === "ar" ? "يوم (سنة كاملة)" : "Days (1 Year)"}</option>
+                            <option value="lifetime">🌟 {lang === "ar" ? "دائم مدى الحياة (Lifetime VIP)" : "Lifetime VIP"}</option>
+                          </select>
+                        </div>
+
+                        {/* Quantity */}
+                        <div>
+                          <label className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider block mb-1">
+                            {lang === "ar" ? "عدد الأكواد المراد توليدها:" : "Quantity to Generate:"}
+                          </label>
+                          <select
+                            value={codeGenForm.count}
+                            onChange={(e) => setCodeGenForm({ ...codeGenForm, count: Number(e.target.value) })}
+                            className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white text-xs font-bold font-mono focus:outline-none focus:border-amber-500"
+                          >
+                            <option value="1">1 {lang === "ar" ? "كود فقط" : "code"}</option>
+                            <option value="5">5 {lang === "ar" ? "أكواد دفعة واحدة" : "codes"}</option>
+                            <option value="10">10 {lang === "ar" ? "أكواد دفعة واحدة" : "codes"}</option>
+                            <option value="25">25 {lang === "ar" ? "كود دفعة واحدة" : "codes"}</option>
+                          </select>
+                        </div>
+
+                        {/* Custom Prefix */}
+                        <div>
+                          <label className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider block mb-1">
+                            {lang === "ar" ? "بادئة الكود (اختياري):" : "Code Prefix (Optional):"}
+                          </label>
+                          <input
+                            type="text"
+                            value={codeGenForm.prefix}
+                            onChange={(e) => setCodeGenForm({ ...codeGenForm, prefix: e.target.value.toUpperCase() })}
+                            placeholder="VIP"
+                            className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white text-xs font-mono font-bold uppercase focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Custom Code Specific */}
+                        <div>
+                          <label className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider block mb-1">
+                            {lang === "ar" ? "كود مخصص معين (اختياري، يترك فارغاً للتوليد العشوائي):" : "Specific Custom Code (Optional):"}
+                          </label>
+                          <input
+                            type="text"
+                            value={codeGenForm.customCode}
+                            onChange={(e) => setCodeGenForm({ ...codeGenForm, customCode: e.target.value.toUpperCase() })}
+                            placeholder={lang === "ar" ? "مثال: GOLDEN2025" : "e.g. GOLDEN2025"}
+                            className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white text-xs font-mono uppercase focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+
+                        {/* Note / Client Name */}
+                        <div>
+                          <label className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider block mb-1">
+                            {lang === "ar" ? "ملاحظة / اسم العميل (اختياري):" : "Note / Client Name:"}
+                          </label>
+                          <input
+                            type="text"
+                            value={codeGenForm.note}
+                            onChange={(e) => setCodeGenForm({ ...codeGenForm, note: e.target.value })}
+                            placeholder={lang === "ar" ? "مثال: اشتراك عميل واتساب 05xxxx" : "e.g. VIP Member #1"}
+                            className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white text-xs focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateCodes()}
+                        disabled={isGeneratingCodes}
+                        className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-amber-500/20 disabled:opacity-50"
+                      >
+                        {isGeneratingCodes ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>{lang === "ar" ? "جاري توليد الأكواد..." : "Generating Codes..."}</span>
+                          </>
+                        ) : (
+                          <>
+                            <KeyRound className="w-4 h-4" />
+                            <span>
+                              {lang === "ar"
+                                ? `توليد ${codeGenForm.count} كود (${codeGenForm.planType === "lifetime" ? "مدى الحياة" : `${codeGenForm.durationDays} يوم`}) الآن`
+                                : `Generate ${codeGenForm.count} Code(s) Now`}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Subscription Codes List & Search */}
+                    <div className="space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <KeyRound className="w-4 h-4 text-amber-400" />
+                          <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                            {lang === "ar" ? "قائمة جميع الأكواد المحفوظة" : "All Generated Codes"}
+                          </h4>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 font-bold">
+                            {adminSubscriptionCodes.length}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {/* Search */}
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={adminCodeSearch}
+                              onChange={(e) => setAdminCodeSearch(e.target.value)}
+                              placeholder={lang === "ar" ? "بحث عن كود أو عميل..." : "Search code or note..."}
+                              className="px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-xl text-white text-xs placeholder:text-zinc-500 focus:outline-none focus:border-amber-500 w-44 sm:w-52"
+                            />
+                          </div>
+
+                          {/* Copy All Filtered Codes */}
+                          {filteredAdminSubscriptionCodes.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyAllFilteredCodes(filteredAdminSubscriptionCodes)}
+                              className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-zinc-700 shrink-0"
+                              title={lang === "ar" ? "نسخ جميع الأكواد المعروضة" : "Copy All Visible Codes"}
+                            >
+                              <Copy className="w-3.5 h-3.5 text-amber-400" />
+                              <span className="hidden sm:inline">{lang === "ar" ? "نسخ الكل" : "Copy All"}</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => fetchSubscriptionCodes()}
+                            className="p-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition cursor-pointer"
+                            title={lang === "ar" ? "تحديث القائمة" : "Refresh List"}
+                          >
+                            <RefreshCw className={`w-4 h-4 ${isLoadingCodes ? "animate-spin" : ""}`} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Filter pills */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                        {[
+                          { id: "all", label: lang === "ar" ? "الكل" : "All" },
+                          { id: "active", label: lang === "ar" ? "النشطة فقط" : "Active Only" },
+                          { id: "expired", label: lang === "ar" ? "المنتهية" : "Expired" },
+                          { id: "disabled", label: lang === "ar" ? "المعطلة" : "Disabled" }
+                        ].map((tab) => (
+                          <button
+                            key={tab.id}
+                            onClick={() => setAdminCodeFilter(tab.id as any)}
+                            className={`px-3 py-1 rounded-lg text-[11px] font-bold transition whitespace-nowrap cursor-pointer ${
+                              adminCodeFilter === tab.id
+                                ? "bg-amber-500 text-black font-black"
+                                : "bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white"
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Codes Grid / List */}
+                      {filteredAdminSubscriptionCodes.length > 0 ? (
+                        <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                          {filteredAdminSubscriptionCodes.map((codeItem) => {
+                            const isCopied = copiedCodeId === codeItem.id;
+                            const isActive = codeItem.status === "active";
+
+                            return (
+                              <div
+                                key={codeItem.id}
+                                className={`p-3 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                  isActive
+                                    ? "bg-zinc-900/90 border-zinc-800 hover:border-amber-500/40"
+                                    : "bg-zinc-950/80 border-zinc-900 opacity-65"
+                                }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                                    isActive
+                                      ? "bg-amber-500/15 border border-amber-500/30 text-amber-400"
+                                      : "bg-zinc-800 border border-zinc-700 text-zinc-500"
+                                  }`}>
+                                    <KeyRound className="w-5 h-5" />
+                                  </div>
+
+                                  <div className="space-y-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-mono font-black text-sm text-white tracking-wider bg-zinc-950 px-2.5 py-0.5 rounded-lg border border-zinc-800">
+                                        {codeItem.code}
+                                      </span>
+
+                                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                                        codeItem.isLifetime || codeItem.planType === "lifetime"
+                                          ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30"
+                                          : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                                      }`}>
+                                        {codeItem.isLifetime || codeItem.planType === "lifetime"
+                                          ? (lang === "ar" ? "دائم مدى الحياة" : "Lifetime VIP")
+                                          : (lang === "ar" ? `${codeItem.durationDays} يوم` : `${codeItem.durationDays} Days`)}
+                                      </span>
+
+                                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
+                                        isActive
+                                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                                          : codeItem.status === "expired"
+                                            ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                                            : "bg-red-500/15 text-red-400 border border-red-500/30"
+                                      }`}>
+                                        {isActive
+                                          ? (lang === "ar" ? "جاهز للتفعيل" : "Active")
+                                          : codeItem.status === "expired"
+                                            ? (lang === "ar" ? "منتهي الصلاحية" : "Expired")
+                                            : (lang === "ar" ? "معطل" : "Disabled")}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 text-[10px] text-zinc-400 flex-wrap">
+                                      {codeItem.note && (
+                                        <span className="text-zinc-300 font-bold bg-zinc-800/80 px-2 py-0.5 rounded">
+                                          {codeItem.note}
+                                        </span>
+                                      )}
+                                      <span>
+                                        {lang === "ar" ? `الاستخدام: ${codeItem.timesUsed || (codeItem.usedDevices?.length || 0)} / ${codeItem.maxDevices || 1}` : `Used: ${codeItem.timesUsed || (codeItem.usedDevices?.length || 0)} / ${codeItem.maxDevices || 1}`}
+                                      </span>
+                                      {codeItem.createdAt && (
+                                        <span className="text-zinc-500">
+                                          {new Date(codeItem.createdAt).toLocaleDateString(lang === "ar" ? "ar-SA" : "en-US")}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                                  {/* Copy Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyCode(codeItem.code, codeItem.id)}
+                                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                                      isCopied
+                                        ? "bg-emerald-500 text-black font-black"
+                                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                                    }`}
+                                    title={lang === "ar" ? "نسخ الكود" : "Copy Code"}
+                                  >
+                                    {isCopied ? (
+                                      <>
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>{lang === "ar" ? "تم النسخ" : "Copied"}</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy className="w-3.5 h-3.5" />
+                                        <span>{lang === "ar" ? "نسخ" : "Copy"}</span>
+                                      </>
+                                    )}
+                                  </button>
+
+                                  {/* Toggle Active / Inactive */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCode(codeItem.id, { status: isActive ? "disabled" : "active" })}
+                                    className={`p-1.5 rounded-xl border transition cursor-pointer ${
+                                      isActive
+                                        ? "bg-zinc-800 hover:bg-amber-500/20 text-zinc-400 hover:text-amber-400 border-zinc-700"
+                                        : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                                    }`}
+                                    title={isActive ? (lang === "ar" ? "تعطيل الكود" : "Disable Code") : (lang === "ar" ? "تفعيل الكود" : "Enable Code")}
+                                  >
+                                    {isActive ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                                  </button>
+
+                                   {/* Delete Code */}
+                                  {deletingCodeId === codeItem.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteCode(codeItem.id)}
+                                        className="px-2 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white text-[11px] font-black cursor-pointer shadow-sm"
+                                        title={lang === "ar" ? "تأكيد الحذف" : "Confirm Delete"}
+                                      >
+                                        {lang === "ar" ? "تأكيد" : "Delete"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeletingCodeId(null)}
+                                        className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-bold cursor-pointer"
+                                      >
+                                        {lang === "ar" ? "إلغاء" : "Cancel"}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeletingCodeId(codeItem.id)}
+                                      className="p-1.5 rounded-xl bg-zinc-800 hover:bg-red-500/20 hover:text-red-400 text-zinc-400 transition cursor-pointer border border-zinc-700"
+                                      title={lang === "ar" ? "حذف الكود نهائياً" : "Delete Code"}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="p-8 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/30 text-center space-y-2">
+                          <KeyRound className="w-8 h-8 mx-auto text-zinc-600" />
+                          <h5 className="text-xs font-bold text-zinc-300">
+                            {lang === "ar" ? "لا توجد أكواد مطابقة لخيارات البحث" : "No matching codes found"}
+                          </h5>
+                          <p className="text-[11px] text-zinc-500">
+                            {lang === "ar" ? "يمكنك توليد أكواد جديدة بالضغط على زر التوليد في الأعلى." : "Generate new codes using the generator tool above."}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : adminModalTab === "backup" ? (
+                  /* BACKUP & RESTORE VIEW FOR ADMIN */
+                  <div className="space-y-6">
+                    {/* Feedback Message */}
+                    {adminMessage && (
+                      <div className={`p-3.5 rounded-2xl text-xs font-bold border flex items-center gap-2 ${
+                        adminMessage.type === "success"
+                          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                          : "bg-red-500/15 text-red-400 border-red-500/30"
+                      }`}>
+                        {adminMessage.type === "success" ? (
+                          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                        )}
+                        <span>{adminMessage.text}</span>
+                      </div>
+                    )}
+
+                    {quickSnapshotStatus && (
+                      <div className="p-3 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 text-xs font-bold flex items-center gap-2">
+                        <Check className="w-4 h-4 text-purple-400" />
+                        <span>{quickSnapshotStatus}</span>
+                      </div>
+                    )}
+
+                    {/* Hero Card: Backup Overview */}
+                    <div className="p-4 sm:p-5 rounded-2xl border border-purple-500/30 bg-gradient-to-br from-purple-950/40 via-zinc-900 to-zinc-950 shadow-xl space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800/80">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
+                            <HardDrive className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-white flex items-center gap-2">
+                              <span>{lang === "ar" ? "سحب نسخة احتياطية واستعادة جميع تفاصيل الموقع" : "Full Site Backup & Data Restore"}</span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                JSON v2.0
+                              </span>
+                            </h4>
+                            <p className="text-xs text-zinc-400 mt-0.5">
+                              {lang === "ar"
+                                ? "تصدير وحفظ واسترجاع كافة القنوات، أكواد الاشتراكات، إعدادات البوابة، شعار الموقع، وتعديلات المباريات بنقرة واحدة."
+                                : "Export, backup, and restore all channels, subscription codes, site settings, and match streams in one click."}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Live Items Grid included in backup */}
+                      <div>
+                        <div className="text-[11px] font-extrabold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                          <Database className="w-3.5 h-3.5 text-purple-400" />
+                          <span>{lang === "ar" ? "محتويات النسخة الاحتياطية الحالية:" : "Included in Current Live Snapshot:"}</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                          <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 flex flex-col justify-between">
+                            <span className="text-[10px] font-extrabold text-cyan-400 flex items-center gap-1">
+                              <Tv className="w-3.5 h-3.5" />
+                              {lang === "ar" ? "القنوات التلفزيونية" : "TV Channels"}
+                            </span>
+                            <p className="text-lg font-black text-white mt-1">
+                              {customChannels.length} <span className="text-[10px] font-normal text-zinc-400">{lang === "ar" ? "قناة" : "channels"}</span>
+                            </p>
+                          </div>
+
+                          <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 flex flex-col justify-between">
+                            <span className="text-[10px] font-extrabold text-amber-400 flex items-center gap-1">
+                              <KeyRound className="w-3.5 h-3.5" />
+                              {lang === "ar" ? "أكواد الاشتراكات" : "Sub Codes"}
+                            </span>
+                            <p className="text-lg font-black text-white mt-1">
+                              {adminSubscriptionCodes.length} <span className="text-[10px] font-normal text-zinc-400">{lang === "ar" ? "كود" : "codes"}</span>
+                            </p>
+                          </div>
+
+                          <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 flex flex-col justify-between">
+                            <span className="text-[10px] font-extrabold text-emerald-400 flex items-center gap-1">
+                              <Trophy className="w-3.5 h-3.5" />
+                              {lang === "ar" ? "المباريات وسيرفراتها" : "Matches & Streams"}
+                            </span>
+                            <p className="text-lg font-black text-white mt-1">
+                              {adminMatchIds.length} <span className="text-[10px] font-normal text-zinc-400">{lang === "ar" ? "مباراة" : "matches"}</span>
+                            </p>
+                          </div>
+
+                          <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 flex flex-col justify-between">
+                            <span className="text-[10px] font-extrabold text-purple-400 flex items-center gap-1">
+                              <Settings className="w-3.5 h-3.5" />
+                              {lang === "ar" ? "إعدادات البوابة والموقع" : "Site Settings"}
+                            </span>
+                            <p className="text-xs font-black text-white mt-2 flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
+                              {siteLogo ? (lang === "ar" ? "شعار مخصص" : "Custom Logo") : (lang === "ar" ? "كاملة ومفعلة" : "Active")}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 1: Export Actions */}
+                    <div className="p-4 sm:p-5 rounded-2xl border border-zinc-800 bg-zinc-900/60 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ArrowDownToLine className="w-4 h-4 text-purple-400" />
+                          <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                            {lang === "ar" ? "١. سحب وتصدير النسخة الاحتياطية" : "1. Export & Download Backup"}
+                          </h4>
+                        </div>
+                        <span className="text-[10px] text-zinc-400">
+                          {lang === "ar" ? "تصدير فوري بصيغة JSON" : "Direct JSON Export"}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Primary Download Button */}
+                        <button
+                          type="button"
+                          onClick={handleDownloadFullBackup}
+                          disabled={isExportingBackup}
+                          className="w-full p-3.5 rounded-xl bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-600/25 transition cursor-pointer"
+                        >
+                          {isExportingBackup ? (
+                            <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                          ) : (
+                            <Download className="w-4 h-4 text-white" />
+                          )}
+                          <span>{lang === "ar" ? "تحميل ملف النسخة الاحتياطية (.JSON)" : "Download Backup File (.JSON)"}</span>
+                        </button>
+
+                        {/* Copy JSON Button */}
+                        <button
+                          type="button"
+                          onClick={handleCopyBackupToClipboard}
+                          disabled={isExportingBackup}
+                          className="w-full p-3.5 rounded-xl bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 text-zinc-200 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+                        >
+                          {isCopiedBackupJson ? (
+                            <CheckCheck className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-4 h-4 text-purple-400" />
+                          )}
+                          <span>
+                            {isCopiedBackupJson 
+                              ? (lang === "ar" ? "تم نسخ كود الـ JSON بنجاح!" : "JSON Copied to Clipboard!")
+                              : (lang === "ar" ? "نسخ نص النسخة الاحتياطية (Copy JSON)" : "Copy Backup JSON Text")}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Quick Secondary Actions & Preview Toggle */}
+                      <div className="pt-3 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleQuickLocalSnapshot}
+                            className="px-3 py-1.5 rounded-lg bg-zinc-850 hover:bg-zinc-800 border border-zinc-750 text-[11px] font-bold text-zinc-300 flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            <Save className="w-3.5 h-3.5 text-amber-400" />
+                            <span>{lang === "ar" ? "حفظ لقطة سريعة في المتصفح" : "Save Quick Browser Snapshot"}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleRestoreQuickLocalSnapshot}
+                            className="px-3 py-1.5 rounded-lg bg-zinc-850 hover:bg-zinc-800 border border-zinc-750 text-[11px] font-bold text-zinc-300 flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            <History className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>{lang === "ar" ? "استعادة آخر لقطة سريعة" : "Restore Quick Snapshot"}</span>
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!isBackupJsonPreviewOpen && !liveBackupJsonStr) {
+                              await fetchLiveBackupData();
+                            }
+                            setIsBackupJsonPreviewOpen(!isBackupJsonPreviewOpen);
+                          }}
+                          className="text-[11px] font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1 transition cursor-pointer"
+                        >
+                          <FileJson className="w-3.5 h-3.5" />
+                          <span>
+                            {isBackupJsonPreviewOpen 
+                              ? (lang === "ar" ? "إخفاء معاينة الكود" : "Hide JSON Preview")
+                              : (lang === "ar" ? "معاينة كود النسخة الحالية" : "Preview Live JSON")}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Expandable Live JSON Box */}
+                      {isBackupJsonPreviewOpen && (
+                        <div className="mt-3 p-3.5 rounded-xl bg-black border border-zinc-800 space-y-2">
+                          <div className="flex items-center justify-between text-[11px] text-zinc-400 pb-2 border-b border-zinc-900">
+                            <span className="font-mono">{lang === "ar" ? "معاينة ملف النسخة الاحتياطية الخام:" : "Raw Backup JSON Payload:"}</span>
+                            <button
+                              type="button"
+                              onClick={handleCopyBackupToClipboard}
+                              className="text-purple-400 hover:text-white flex items-center gap-1 cursor-pointer font-bold"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>{lang === "ar" ? "نسخ" : "Copy"}</span>
+                            </button>
+                          </div>
+                          <pre className="text-[10px] font-mono text-purple-300/90 overflow-x-auto max-h-[160px] p-2 bg-zinc-950 rounded-lg scrollbar-thin">
+                            {liveBackupJsonStr || JSON.stringify(backupSummaryData || {}, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Section 2: Restore Backup */}
+                    <div className="p-4 sm:p-5 rounded-2xl border border-zinc-800 bg-zinc-900/60 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ArrowUpFromLine className="w-4 h-4 text-emerald-400" />
+                          <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                            {lang === "ar" ? "٢. استعادة وتطبيق نسخة احتياطية" : "2. Restore Site Backup"}
+                          </h4>
+                        </div>
+                        {/* Mode switch */}
+                        <div className="flex p-0.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[11px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setBackupRestoreMode("file")}
+                            className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                              backupRestoreMode === "file" ? "bg-purple-600 text-white shadow" : "text-zinc-400 hover:text-white"
+                            }`}
+                          >
+                            {lang === "ar" ? "رفع ملف JSON" : "Upload File"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBackupRestoreMode("paste")}
+                            className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                              backupRestoreMode === "paste" ? "bg-purple-600 text-white shadow" : "text-zinc-400 hover:text-white"
+                            }`}
+                          >
+                            {lang === "ar" ? "لصق نص JSON" : "Paste JSON"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* File Upload Dropzone */}
+                      {backupRestoreMode === "file" ? (
+                        <div>
+                          <label className="flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border-2 border-dashed border-zinc-700 hover:border-purple-500/80 bg-zinc-950/60 hover:bg-zinc-900/50 cursor-pointer transition text-center group">
+                            <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 group-hover:scale-110 transition">
+                              <FileUp className="w-5 h-5" />
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs font-black text-zinc-200">
+                                {lang === "ar" ? "اضغط لاختيار ملف النسخة الاحتياطية (.json) من جهازك" : "Click or drag & drop backup (.json) file"}
+                              </p>
+                              <p className="text-[10px] text-zinc-500">
+                                {lang === "ar" ? "الملفات المدعومة: JSON فقط" : "Supported formats: .json"}
+                              </p>
+                            </div>
+                            <input
+                              type="file"
+                              accept=".json,application/json"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  handleFileSelectForRestore(file);
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                      ) : (
+                        /* Paste JSON Box */
+                        <div className="space-y-2">
+                          <label className="text-[11px] font-bold text-zinc-300 block">
+                            {lang === "ar" ? "الصق كود الـ JSON هنا للتحقق والاستعادة:" : "Paste JSON Backup Code:"}
+                          </label>
+                          <textarea
+                            value={backupPasteText}
+                            onChange={(e) => handleParsePastedJson(e.target.value)}
+                            placeholder='{"channels": [...], "subscriptionCodes": [...], ...}'
+                            rows={4}
+                            className="w-full p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-purple-500/80 scrollbar-thin"
+                          />
+                        </div>
+                      )}
+
+                      {/* Parse Error Display */}
+                      {backupParseError && (
+                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{backupParseError}</span>
+                        </div>
+                      )}
+
+                      {/* Verified Preview & Confirmation Box */}
+                      {parsedBackupData && (
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/30 via-zinc-900 to-zinc-950 border border-emerald-500/30 space-y-3.5">
+                          <div className="flex items-center justify-between pb-2 border-b border-emerald-500/20">
+                            <div className="flex items-center gap-2 text-emerald-400 font-black text-xs">
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>{lang === "ar" ? "تم التحقق من صحة ملف النسخة الاحتياطية بنجاح!" : "Backup File Validated Successfully!"}</span>
+                            </div>
+                            <span className="text-[10px] font-mono text-zinc-400">
+                              {parsedBackupData.meta?.exportDate ? new Date(parsedBackupData.meta.exportDate).toLocaleString() : ""}
+                            </span>
+                          </div>
+
+                          {/* Discovered Contents Summary */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                            <div className="p-2.5 rounded-xl bg-black/50 border border-zinc-800">
+                              <span className="text-[10px] text-zinc-400 block">{lang === "ar" ? "القنوات المكتشفة" : "Channels"}</span>
+                              <span className="font-black text-cyan-400 text-sm">
+                                {Array.isArray(parsedBackupData.channels) ? parsedBackupData.channels.length : 0} {lang === "ar" ? "قناة" : "items"}
+                              </span>
+                            </div>
+
+                            <div className="p-2.5 rounded-xl bg-black/50 border border-zinc-800">
+                              <span className="text-[10px] text-zinc-400 block">{lang === "ar" ? "أكواد الاشتراكات" : "Sub Codes"}</span>
+                              <span className="font-black text-amber-400 text-sm">
+                                {Array.isArray(parsedBackupData.subscriptionCodes) ? parsedBackupData.subscriptionCodes.length : 0} {lang === "ar" ? "كود" : "codes"}
+                              </span>
+                            </div>
+
+                            <div className="p-2.5 rounded-xl bg-black/50 border border-zinc-800">
+                              <span className="text-[10px] text-zinc-400 block">{lang === "ar" ? "تعديلات المباريات" : "Match Overrides"}</span>
+                              <span className="font-black text-emerald-400 text-sm">
+                                {parsedBackupData.matchOverrides ? Object.keys(parsedBackupData.matchOverrides).length : 0} {lang === "ar" ? "مباراة" : "matches"}
+                              </span>
+                            </div>
+
+                            <div className="p-2.5 rounded-xl bg-black/50 border border-zinc-800">
+                              <span className="text-[10px] text-zinc-400 block">{lang === "ar" ? "إعدادات البوابة" : "Site Settings"}</span>
+                              <span className="font-black text-purple-400 text-sm">
+                                {parsedBackupData.siteSettings || parsedBackupData.subscriptionSettings ? (lang === "ar" ? "متوفرة ✓" : "Present ✓") : (lang === "ar" ? "بدون" : "None")}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Warning text */}
+                          <p className="text-[11px] text-amber-400/90 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20">
+                            ⚠️ {lang === "ar"
+                              ? "تنبيه: استعادة النسخة الاحتياطية ستحدّث وتستبدل البيانات الحالية بالبيانات المكتشفة في هذا الملف وتطبيقها فوراً على السيرفر."
+                              : "Notice: Restoring will overwrite existing data on the server with the contents of this backup."}
+                          </p>
+
+                          {/* Confirm Restore Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleExecuteRestore()}
+                            disabled={isRestoringBackup}
+                            className="w-full p-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition cursor-pointer"
+                          >
+                            {isRestoringBackup ? (
+                              <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                            ) : (
+                              <CheckCheck className="w-4 h-4 text-black" />
+                            )}
+                            <span>{lang === "ar" ? "تأكيد واستعادة جميع تفاصيل الموقع الآن" : "Confirm & Restore All Site Details Now"}</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -4571,159 +8012,163 @@ export default function App() {
 
 
 
-      {/* Floating Support & Controls Bubble (Bottom Left) */}
-      <div className="fixed bottom-6 left-6 z-50 flex flex-col items-start gap-3">
-        <AnimatePresence>
-          {isSupportOpen && (
+      {/* Subscription Details Modal */}
+      <AnimatePresence>
+        {isSubscriptionDetailsOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 backdrop-blur-sm"
+            onClick={() => setIsSubscriptionDetailsOpen(false)}
+          >
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 10 }}
-              className={`p-4 rounded-2xl border shadow-xl flex flex-col gap-3 min-w-[220px] ${
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className={`w-full max-w-md rounded-3xl border p-6 space-y-5 shadow-2xl relative overflow-hidden ${
                 theme === "black"
-                  ? "bg-zinc-950/95 border-zinc-800 text-white"
-                  : "bg-white/95 border-zinc-200 text-zinc-900 shadow-zinc-300/30"
+                  ? "border-amber-500/30 bg-zinc-950 text-white"
+                  : "border-amber-400/50 bg-white text-zinc-900 shadow-2xl"
               }`}
+              onClick={(e) => e.stopPropagation()}
             >
-              {/* Header inside popup */}
-              <div className="flex items-center gap-2 pb-2 border-b border-zinc-800/20 dark:border-zinc-800">
-                <HelpCircle className="w-4 h-4 text-amber-500 animate-pulse" />
-                <span className="text-xs font-black tracking-wider uppercase">
-                  {lang === "ar" ? "الدعم والتحكم" : "Support & Role"}
-                </span>
-              </div>
-
-              {/* Role Selection Option */}
-              <div className="space-y-1.5">
-                <span className="text-[10px] text-zinc-400 font-bold block">
-                  {lang === "ar" ? "اختر الصلاحية:" : "Select Role:"}
-                </span>
-                <div className={`flex items-center p-1 rounded-xl border ${
-                  theme === "black" ? "bg-zinc-900 border-zinc-800" : "bg-zinc-100 border-zinc-200"
-                }`}>
-                  <button
-                    onClick={() => setUserRole("viewer")}
-                    className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-300 flex items-center justify-center gap-1.5 ${
-                      userRole === "viewer"
-                        ? "bg-amber-500 text-black shadow-sm font-black"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    }`}
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>{lang === "ar" ? "مشاهد" : "Viewer"}</span>
-                  </button>
-                  <button
-                    onClick={() => setUserRole("admin")}
-                    className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-300 flex items-center justify-center gap-1.5 ${
-                      userRole === "admin"
-                        ? "bg-red-500 text-white shadow-sm font-black"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    }`}
-                  >
-                    <Shield className="w-3.5 h-3.5" />
-                    <span>{lang === "ar" ? "مسؤول" : "Admin"}</span>
-                  </button>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-500">
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className={`text-base font-black ${theme === "black" ? "text-white" : "text-zinc-900"}`}>
+                      {lang === "ar" ? "تفاصيل اشتراك القنوات VIP" : "VIP TV Channels Subscription Details"}
+                    </h3>
+                    <p className={`text-[11px] ${theme === "black" ? "text-zinc-400" : "text-zinc-500"}`}>
+                      {lang === "ar" ? "حالة الكود وتاريخ الصلاحية لجهازك" : "Current device activation status"}
+                    </p>
+                  </div>
                 </div>
-              </div>
-
-              {/* Admin Panel Access inside Support Popover (If Admin is selected) */}
-              {userRole === "admin" && (
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => {
-                      setIsAdminOpen(true);
-                      setAdminModalTab("controls");
-                      setAdminMessage(null);
-                      loadAdminMatchIds();
-                      setIsSupportOpen(false); // Auto close
-                    }}
-                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-1.5 transition-all duration-300 ${
-                      theme === "black"
-                        ? "bg-zinc-900 border-zinc-800 text-zinc-200 hover:text-white hover:bg-zinc-800"
-                        : "bg-zinc-50 border-zinc-200 text-zinc-800 hover:bg-zinc-100"
-                    }`}
-                  >
-                    <Settings className="w-4 h-4 text-amber-500" />
-                    <span className="text-xs font-bold">
-                      {lang === "ar" ? "لوحة التحكم" : "Admin Panel"}
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setIsAdminOpen(true);
-                      setAdminModalTab("analytics");
-                      fetchAnalyticsData();
-                      setIsSupportOpen(false); // Auto close
-                    }}
-                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-1.5 transition-all duration-300 relative ${
-                      theme === "black"
-                        ? "bg-emerald-950/40 border-emerald-800/50 text-emerald-300 hover:bg-emerald-900/50"
-                        : "bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping absolute top-2 right-2" />
-                    <BarChart3 className="w-4 h-4 text-emerald-500" />
-                    <span className="text-xs font-bold">
-                      {lang === "ar" ? "الإحصائيات" : "Analytics"}
-                    </span>
-                  </button>
-                </div>
-              )}
-
-              {/* Extra Support Info */}
-              <div className="border-t border-zinc-800/10 dark:border-zinc-800/50 pt-3 mt-1 space-y-2">
-                <div className="text-[10px] text-zinc-400 font-bold block">
-                  {lang === "ar" ? "الدعم الفني:" : "Technical Support:"}
-                </div>
-                <a
-                  href="mailto:asdda9019@gmail.com"
-                  className={`flex items-center gap-2 p-2 rounded-xl border text-xs transition-all ${
+                <button
+                  onClick={() => setIsSubscriptionDetailsOpen(false)}
+                  className={`p-1.5 rounded-xl cursor-pointer border ${
                     theme === "black"
-                      ? "bg-zinc-900 border-zinc-800 text-amber-500 hover:text-amber-400 hover:bg-zinc-850"
-                      : "bg-zinc-50 border-zinc-200 text-amber-600 hover:text-amber-700 hover:bg-zinc-100"
+                      ? "text-zinc-400 hover:text-white bg-zinc-900 border-zinc-800"
+                      : "text-zinc-600 hover:text-black bg-zinc-100 border-zinc-200"
                   }`}
                 >
-                  <Mail className="w-4 h-4 shrink-0" />
-                  <span className="font-mono text-[11px] select-all truncate">
-                    asdda9019@gmail.com
-                  </span>
-                </a>
-                <div className="text-[9px] text-zinc-500 text-center pt-1">
-                  {lang === "ar" ? "الدعم الفني والخدمات المتميزة ⚡" : "Premium support & services ⚡"}
-                </div>
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
-        {/* Support Button (Circle) */}
-        <button
-          onClick={() => setIsSupportOpen(!isSupportOpen)}
-          className={`w-12 h-12 rounded-full flex items-center justify-center transition-all transform hover:scale-110 active:scale-95 shadow-lg border relative ${
-            isSupportOpen 
-              ? "bg-amber-500 text-black border-amber-600" 
-              : theme === "black"
-                ? "bg-zinc-900 text-zinc-200 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-850"
-                : "bg-white text-zinc-850 border-zinc-200 hover:bg-zinc-50 shadow-md"
-          }`}
-          title={lang === "ar" ? "الدعم والصلاحيات" : "Support & Roles"}
-        >
-          {isSupportOpen ? (
-            <X className="w-5 h-5 font-bold" />
-          ) : (
-            <Headphones className="w-5 h-5 text-amber-500" />
-          )}
-          
-          {/* Notification Badge if Closed */}
-          {!isSupportOpen && (
-            <span className="absolute -top-1 -right-1 flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-            </span>
-          )}
-        </button>
-      </div>
+              {subscriptionData ? (
+                <div className="space-y-4">
+                  {/* Active Badge Card */}
+                  <div className={`p-4 rounded-2xl border space-y-3 ${
+                    theme === "black"
+                      ? "bg-zinc-900/90 border-amber-500/30"
+                      : "bg-amber-50/40 border-amber-200/80"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs font-bold ${theme === "black" ? "text-zinc-400" : "text-zinc-600"}`}>{lang === "ar" ? "كود التفعيل:" : "Activation Code:"}</span>
+                      <span className={`font-mono font-black text-sm px-3 py-1 rounded-xl border tracking-wider ${
+                        theme === "black"
+                          ? "text-amber-400 bg-zinc-950 border-amber-500/20"
+                          : "text-amber-700 bg-white border-amber-300 shadow-sm"
+                      }`}>
+                        {subscriptionData.code}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className={`font-bold ${theme === "black" ? "text-zinc-400" : "text-zinc-600"}`}>{lang === "ar" ? "نوع الاشتراك:" : "Type:"}</span>
+                      <span className={`font-black ${theme === "black" ? "text-white" : "text-zinc-900"}`}>
+                        {subscriptionData.isLifetime
+                          ? (lang === "ar" ? "🌟 دائم مدى الحياة (VIP)" : "🌟 Lifetime VIP")
+                          : (lang === "ar" ? `محدد بالأيام (${subscriptionData.durationDays || 30} يوم)` : `${subscriptionData.durationDays || 30} Days`)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className={`font-bold ${theme === "black" ? "text-zinc-400" : "text-zinc-600"}`}>{lang === "ar" ? "حالة الصلاحية:" : "Remaining:"}</span>
+                      <span className="font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">
+                        {subscriptionData.isLifetime
+                          ? (lang === "ar" ? "غير منتهي الصلاحية" : "Never Expires")
+                          : (lang === "ar" ? `متبقي ${subscriptionData.remainingDays || 0} يوم` : `${subscriptionData.remainingDays || 0} days remaining`)}
+                      </span>
+                    </div>
+
+                    {subscriptionData.expiresAt && !subscriptionData.isLifetime && (
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className={`font-bold ${theme === "black" ? "text-zinc-500" : "text-zinc-500"}`}>{lang === "ar" ? "تاريخ الانتهاء:" : "Expires on:"}</span>
+                        <span className={`font-mono ${theme === "black" ? "text-zinc-300" : "text-zinc-700"}`}>
+                          {new Date(subscriptionData.expiresAt).toLocaleDateString(lang === "ar" ? "ar-SA" : "en-US")}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reset / Change Code button & Confirmation in-UI */}
+                  <div className="space-y-3 pt-2">
+                    {isConfirmingLogoutSubscription ? (
+                      <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/30 space-y-2.5">
+                        <p className="text-xs font-bold text-red-500 text-center">
+                          {lang === "ar" 
+                            ? "هل ترغب بالتأكيد في تسجيل الخروج من كود الاشتراك الحالي؟" 
+                            : "Are you sure you want to log out of this subscription code?"}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleLogoutSubscription}
+                            className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span>{lang === "ar" ? "نعم، تسجيل الخروج" : "Yes, Log out"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsConfirmingLogoutSubscription(false)}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer border ${
+                              theme === "black"
+                                ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700"
+                                : "bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border-zinc-300"
+                            }`}
+                          >
+                            <span>{lang === "ar" ? "إلغاء" : "Cancel"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsConfirmingLogoutSubscription(true)}
+                          className="flex-1 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-600 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-red-500/30 cursor-pointer"
+                        >
+                          <LogOut className="w-3.5 h-3.5" />
+                          <span>{lang === "ar" ? "تسجيل الخروج من الكود" : "Log out / Change Code"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsSubscriptionDetailsOpen(false)}
+                          className="flex-1 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-cyan-500/20"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>{lang === "ar" ? "متابعة المشاهدة" : "Done"}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 text-center text-zinc-400 text-xs">
+                  {lang === "ar" ? "لا يوجد اشتراك مفعل حالياً." : "No active subscription found."}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

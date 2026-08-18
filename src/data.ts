@@ -4,14 +4,17 @@ export type Theme = "black" | "white";
 export interface TranslationSet {
   sports: string;
   cinema: string;
+  channels: string;
   language: string;
   theme: string;
   black: string;
   white: string;
   sportsTitle: string;
   cinemaTitle: string;
+  channelsTitle: string;
   sportsDesc: string;
   cinemaDesc: string;
+  channelsDesc: string;
   liveScores: string;
   matchSchedule: string;
   trendingMovies: string;
@@ -23,6 +26,7 @@ export interface TranslationSet {
   duration: string;
   searchPlaceholderSports: string;
   searchPlaceholderCinema: string;
+  searchPlaceholderChannels: string;
   noResults: string;
   category: string;
   all: string;
@@ -50,20 +54,41 @@ export interface TranslationSet {
   ended: string;
   bookingFor: string;
   selectedSeats: string;
+  sportsChannels: string;
+  cinemaChannels: string;
+  newsChannels: string;
+  generalChannels: string;
+  documentaryChannels: string;
+  kidsChannels: string;
+  watchLive: string;
+  watchChannel: string;
+  servers: string;
+  server: string;
+  nowBroadcasting: string;
+  currentBroadcast: string;
+  nextBroadcast: string;
+  channelQuality: string;
+  channelsCount: string;
+  directPlay: string;
+  searchChannels: string;
+  noChannelsFound: string;
 }
 
 export const translations: Record<Language, TranslationSet> = {
   ar: {
     sports: "الرياضة",
     cinema: "السينما",
+    channels: "جميع القنوات",
     language: "اللغة",
     theme: "اللون",
     black: "أسود",
     white: "أبيض",
     sportsTitle: "المنصة الرياضية",
     cinemaTitle: "منصة السينما والأفلام",
+    channelsTitle: "بث مباشر لجميع القنوات",
     sportsDesc: "تابع أحدث الفعاليات والنتائج الرياضية في العالم بلمسة واحدة.",
     cinemaDesc: "اكتشف أحدث العروض في دور السينما العالمية وأوقات عرضها.",
+    channelsDesc: "تصفح وشاهد جميع قنوات البث التلفزيوني والرياضي بجودات متعددة.",
     liveScores: "النتائج المباشرة",
     matchSchedule: "جدول الفعاليات",
     trendingMovies: "أفلام معروضة حالياً",
@@ -75,7 +100,8 @@ export const translations: Record<Language, TranslationSet> = {
     duration: "المدة",
     searchPlaceholderSports: "ابحث عن رياضة، فريق أو حدث...",
     searchPlaceholderCinema: "ابحث عن فيلم أو تصنيف...",
-    noResults: "لا توجد نتائج مطابقة لبحثك",
+    searchPlaceholderChannels: "ابحث عن اسم القناة، الباقة أو التصنيف...",
+    noResults: "لا توجد نتائج",
     category: "الفئة",
     all: "الكل",
     football: "كرة القدم",
@@ -101,19 +127,40 @@ export const translations: Record<Language, TranslationSet> = {
     live: "مباشر الآن",
     ended: "انتهت",
     bookingFor: "حجز لفيلم",
-    selectedSeats: "المقاعد المختارة"
+    selectedSeats: "المقاعد المختارة",
+    sportsChannels: "قنوات رياضية",
+    cinemaChannels: "سينما وأفلام",
+    newsChannels: "إخبارية",
+    generalChannels: "منوعة وترفيه",
+    documentaryChannels: "وثائقية",
+    kidsChannels: "أطفال",
+    watchLive: "مشاهدة القناة",
+    watchChannel: "مشاهدة البث",
+    servers: "السيرفرات",
+    server: "سيرفر",
+    nowBroadcasting: "يُبث الآن",
+    currentBroadcast: "البرنامج الحالي",
+    nextBroadcast: "التالي",
+    channelQuality: "الجودة",
+    channelsCount: "قناة",
+    directPlay: "تشغيل مباشر",
+    searchChannels: "ابحث عن قناة، تصنيف، أو برنامج...",
+    noChannelsFound: "لم يتم العثور على أي قنوات مطابقة للبحث"
   },
   en: {
     sports: "Sports",
     cinema: "Cinema",
+    channels: "All Channels",
     language: "Language",
     theme: "Color",
     black: "Black",
     white: "White",
     sportsTitle: "Sports Arena",
     cinemaTitle: "Cinema Hub",
+    channelsTitle: "All Live TV Channels",
     sportsDesc: "Follow the latest dynamic events and live highlights from around the globe.",
     cinemaDesc: "Explore cutting-edge cinematic releases and immersive theatre showtimes.",
+    channelsDesc: "Browse and watch all TV & sports streaming channels in multiple qualities.",
     liveScores: "Live Highlights",
     matchSchedule: "Event Schedule",
     trendingMovies: "Now Playing",
@@ -125,6 +172,7 @@ export const translations: Record<Language, TranslationSet> = {
     duration: "Duration",
     searchPlaceholderSports: "Search sport, team or event...",
     searchPlaceholderCinema: "Search movies or genres...",
+    searchPlaceholderChannels: "Search channel name, package or genre...",
     noResults: "No events match your criteria",
     category: "Category",
     all: "All",
@@ -151,7 +199,25 @@ export const translations: Record<Language, TranslationSet> = {
     live: "Live Now",
     ended: "Finished",
     bookingFor: "Booking for",
-    selectedSeats: "Selected Seats"
+    selectedSeats: "Selected Seats",
+    sportsChannels: "Sports Channels",
+    cinemaChannels: "Cinema & Movies",
+    newsChannels: "News Channels",
+    generalChannels: "Entertainment & TV",
+    documentaryChannels: "Documentary",
+    kidsChannels: "Kids",
+    watchLive: "Watch Channel",
+    watchChannel: "Watch Live",
+    servers: "Servers",
+    server: "Server",
+    nowBroadcasting: "Now Airing",
+    currentBroadcast: "Current Program",
+    nextBroadcast: "Next",
+    channelQuality: "Quality",
+    channelsCount: "Channels",
+    directPlay: "Play Stream",
+    searchChannels: "Search channel, category, or show...",
+    noChannelsFound: "No channels found matching your search"
   }
 };
 
@@ -308,3 +374,28 @@ export const cinemaMovies: Movie[] = [
     banner: "bg-radial from-blue-950/40 to-transparent"
   }
 ];
+
+export interface ChannelStream {
+  name: { ar: string; en: string };
+  url: string;
+  type: "video" | "iframe";
+  quality?: string;
+}
+
+export interface Channel {
+  id: string;
+  name: { ar: string; en: string };
+  category: "sports" | "cinema" | "news" | "general" | "documentary" | "kids";
+  categoryName: { ar: string; en: string };
+  logo: string;
+  quality: "4K" | "FHD" | "HD" | "SD";
+  country: { ar: string; en: string };
+  currentProgram?: { ar: string; en: string };
+  nextProgram?: { ar: string; en: string };
+  streams: ChannelStream[];
+  isLive: boolean;
+  featured?: boolean;
+}
+
+export const tvChannels: Channel[] = [];
+

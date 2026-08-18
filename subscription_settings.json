@@ -1,0 +1,13 @@
+{
+  "gateEnabled": true,
+  "title": {
+    "ar": "تفعيل اشتراك باقة القنوات التلفزيونية VIP",
+    "en": "VIP TV Channels Subscription Activation"
+  },
+  "description": {
+    "ar": "يرجى إدخال كود التفعيل للوصول إلى قائمة جميع القنوات التلفزيونية والبث المباشر عالي الجودة.",
+    "en": "Please enter your activation code to access all live TV channels and ultra HD streams."
+  },
+  "supportContact": "https://wa.me/966500000000",
+  "supportType": "whatsapp"
+}
